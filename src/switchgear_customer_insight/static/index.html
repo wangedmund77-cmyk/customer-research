@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>盘厂大客户洞察工作台</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <section class="toolbar">
+          <div class="brand-block">
+            <div class="brand-mark">SE</div>
+            <div>
+              <p class="eyebrow">Panel Builder Insight</p>
+              <h1>盘厂大客户洞察</h1>
+            </div>
+          </div>
+          <form class="customer-form" id="customerForm">
+            <label class="customer-name">
+              <span>大客户名称</span>
+              <select id="customerSelect" name="customer" required>
+                <option value="浙江正泰电器股份有限公司">浙江正泰电器股份有限公司</option>
+                <option value="江苏中环电气集团有限公司">江苏中环电气集团有限公司</option>
+                <option value="福州天宇电气股份有限公司">福州天宇电气股份有限公司</option>
+              </select>
+            </label>
+          </form>
+        </section>
+
+        <section class="view-tabs" aria-label="客户洞察视图">
+          <button class="view-tab is-active" data-view="dashboard" type="button">客户洞察</button>
+          <button class="view-tab" data-view="framework" type="button">框架模块</button>
+        </section>
+
+        <section class="content-grid">
+          <article class="main-panel" id="dashboardView">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Customer 360</p>
+                <h2>客户洞察看板</h2>
+              </div>
+              <div class="download-actions">
+                <a id="dashboardDownloadWord" class="utility-link is-disabled" href="#" target="_blank" rel="noreferrer">下载 Word</a>
+                <a id="dashboardDownloadReport" class="utility-link is-disabled" href="#" target="_blank" rel="noreferrer">下载 Markdown</a>
+              </div>
+            </div>
+            <div id="dashboardBoard" class="dashboard-board empty-state">选择客户后生成 360 洞察看板。</div>
+          </article>
+
+          <article class="main-panel is-hidden" id="frameworkView">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Workbook Framework</p>
+                <h2>框架模块</h2>
+              </div>
+              <strong id="frameworkCount" class="coverage-pill">加载中</strong>
+            </div>
+            <ol id="moduleList" class="framework-module-list"></ol>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

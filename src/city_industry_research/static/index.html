@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>城市产业深度研究</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workbench">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">City Industry Research</p>
+            <h1>城市产业深度研究</h1>
+          </div>
+          <div class="status-pill" id="systemStatus">检查环境中...</div>
+        </header>
+
+        <form class="control-panel" id="researchForm">
+          <div class="field-row">
+            <label>
+              <span>省份</span>
+              <input name="province" placeholder="例如：江苏省" autocomplete="address-level1" />
+            </label>
+            <label>
+              <span>地级市</span>
+              <input name="city" placeholder="例如：无锡市" required autocomplete="address-level2" />
+            </label>
+            <label>
+              <span>报告年度</span>
+              <input name="year" type="number" min="2020" max="2035" />
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label>
+              <span>模型</span>
+              <input name="model" placeholder="默认读取 OPENAI_MODEL 或 gpt-5.5" />
+            </label>
+            <label>
+              <span>生成模式</span>
+              <select name="mode">
+                <option value="auto_discovery">自动发现来源并深度研究</option>
+                <option value="web_search">模型联网补充研究</option>
+                <option value="template">只生成模板</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="textarea-field">
+            <span>补充官方来源链接（可选，每行一个）</span>
+            <textarea name="source_urls" rows="5" placeholder="通常不需要填写；系统会自动查找政府官网、官方媒体、交易所公告等来源。"></textarea>
+          </label>
+
+          <div class="field-row advanced-row">
+            <label>
+              <span>检索式上限</span>
+              <input name="query_limit" type="number" min="10" max="80" value="48" />
+            </label>
+            <label>
+              <span>来源上限</span>
+              <input name="max_sources" type="number" min="20" max="200" value="120" />
+            </label>
+            <label class="checkbox-field">
+              <span>模型联网补漏</span>
+              <input name="use_model_web_search" type="checkbox" checked />
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button type="submit" class="primary">开始研究</button>
+            <a id="downloadLink" class="secondary hidden" href="#" target="_blank" rel="noreferrer">下载报告</a>
+          </div>
+        </form>
+
+        <section class="progress-panel">
+          <div class="panel-header">
+            <h2>任务进度</h2>
+            <span id="jobBadge">未开始</span>
+          </div>
+          <ol id="logList" class="logs"></ol>
+        </section>
+
+        <section class="validation-panel">
+          <div class="panel-header">
+            <h2>验证过程</h2>
+            <span id="validationCount">0 条记录</span>
+          </div>
+          <div id="validationList" class="validation-list">
+            <div class="validation-empty">等待任务开始。</div>
+          </div>
+        </section>
+
+        <section class="report-panel">
+          <div class="panel-header">
+            <h2>报告预览</h2>
+            <span id="reportPath"></span>
+          </div>
+          <pre id="reportPreview">输入城市名称后开始研究。</pre>
+        </section>
+      </section>
+
+      <aside class="export-panel">
+        <h2>导出</h2>
+        <p class="hint">报告生成后，可创建邮件或 Google Docs 导出请求；若配置了 SMTP，邮件会直接发送。</p>
+
+        <form id="emailForm" class="export-form">
+          <label>
+            <span>收件人邮箱</span>
+            <input name="to" type="email" placeholder="name@example.com" />
+          </label>
+          <label>
+            <span>邮件主题</span>
+            <input name="subject" placeholder="城市产业深度研究报告" />
+          </label>
+          <button type="submit" disabled>发送到邮箱</button>
+        </form>
+
+        <form id="docsForm" class="export-form">
+          <label>
+            <span>Google Docs 标题</span>
+            <input name="title" placeholder="城市产业深度研究报告" />
+          </label>
+          <button type="submit" disabled>导出到 Google Docs</button>
+        </form>
+
+        <div class="export-status" id="exportStatus">等待报告生成。</div>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+[project]
+name = "city-industry-research"
+version = "0.1.0"
+description = "Authority-source based prefecture-level city industry research report generator."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Codex" }]
+dependencies = []
+
+[project.scripts]
+city-industry-research = "city_industry_research.cli:main"
+switchgear-customer-insight = "switchgear_customer_insight.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+city_industry_research = ["static/*.html", "static/*.css", "static/*.js"]
+switchgear_customer_insight = ["static/*.html", "static/*.css", "static/*.js"]
