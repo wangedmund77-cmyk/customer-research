@@ -16,7 +16,7 @@ if %errorlevel%==0 (
 )
 
 if "%PYTHON_CMD%"=="" (
-  echo 未找到 Python。请安装 Python 3.11 或更高版本，并勾选 Add python.exe to PATH。
+  echo 未找到 Python。请安装 Python 3.9 或更高版本，并勾选 Add python.exe to PATH。
   echo 下载地址: https://www.python.org/downloads/windows/
   pause
   exit /b 1

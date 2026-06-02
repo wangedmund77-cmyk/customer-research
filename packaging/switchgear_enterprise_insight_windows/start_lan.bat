@@ -16,7 +16,7 @@ if %errorlevel%==0 (
 )
 
 if "%PYTHON_CMD%"=="" (
-  echo Python was not found. Please install Python 3.11 or later and enable Add python.exe to PATH.
+  echo Python was not found. Please install Python 3.9 or later and enable Add python.exe to PATH.
   echo https://www.python.org/downloads/windows/
   pause
   exit /b 1

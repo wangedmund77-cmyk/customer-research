@@ -3,7 +3,7 @@ name = "city-industry-research"
 version = "0.1.0"
 description = "Authority-source based prefecture-level city industry research report generator."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 authors = [{ name = "Codex" }]
 dependencies = []
 

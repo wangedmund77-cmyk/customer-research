@@ -21,7 +21,7 @@ function Resolve-PythonCommand {
     }
 
     try {
-      & $candidate.Exe @($candidate.Args + @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)")) | Out-Null
+      & $candidate.Exe @($candidate.Args + @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)")) | Out-Null
       if ($LASTEXITCODE -eq 0) {
         return [pscustomobject]@{
           Exe = $candidate.Exe
@@ -41,7 +41,7 @@ try {
 
   $python = Resolve-PythonCommand
   if ($null -eq $python) {
-    throw "Python 3.11 or later was not found. Install it from https://www.python.org/downloads/windows/ and enable 'Add python.exe to PATH'."
+    throw "Python 3.9 or later was not found. Install it from https://www.python.org/downloads/windows/ and enable 'Add python.exe to PATH'."
   }
 
   $listenHost = $HostAddress

@@ -3,7 +3,7 @@
 ## Requirements
 
 - Windows 10 / Windows 11
-- Python 3.11 or later
+- Python 3.9 or later
 - Edge, Chrome, or Firefox
 
 No extra Python packages are required.
@@ -26,6 +26,26 @@ LAN mode:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start_powershell_lan.ps1
+```
+
+## Start with Python
+
+Open a terminal in the unzipped folder and run:
+
+```powershell
+python start.py
+```
+
+LAN mode:
+
+```powershell
+python start.py --lan
+```
+
+Use another port:
+
+```powershell
+python start.py --port 8791
 ```
 
 ## Share on LAN
