@@ -1,4 +1,4 @@
-"""Render prompts and templates for switchgear customer insight reports."""
+"""Render prompts and templates for switchgear enterprise insight reports."""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ def slugify_customer_name(name: str) -> str:
 
 
 def render_source_plan(customer_name: str) -> str:
-    return f"""# {customer_name}客户洞察来源计划
+    return f"""# {customer_name}企业洞察来源计划
 
 ## 研究目标
 
-围绕盘厂大客户洞察框架，形成可用于施耐德电气销售、技术、服务、渠道与管理层沟通的客户画像、机会地图和行动建议。
+围绕盘厂企业洞察研究框架，形成可用于施耐德电气销售、技术、服务、渠道与管理层沟通的企业画像、机会地图和行动建议。
 
 ## 来源优先级
 
@@ -58,21 +58,21 @@ def render_research_prompt(customer_name: str, report_year: int | None = None) -
     year = report_year or date.today().year
     source_lines = "\n".join(f"- {item}" for item in SOURCE_PRIORITY)
     field_lines = "\n".join(f"- {item.module} / {item.category} / {item.field}：{item.description}" for item in FRAMEWORK)
-    return f"""你是施耐德电气盘厂客户部的大客户研究顾问。请为“{customer_name}”撰写深度客户洞察报告，报告年度为 {year}。
+    return f"""你是施耐德电气盘厂企业研究顾问。请为“{customer_name}”撰写深度企业洞察报告，报告年度为 {year}。
 
 研究原则：
 1. 对公开事实优先使用权威来源，按以下顺序采信：
 {source_lines}
 2. 每个关键数字、判断、资质、风险和机会都必须标注来源编号。
 3. 对公开资料无法确认的字段，明确写“待内部补充/需访谈核验”，不要猜测。
-4. 报告要把客户视角和施耐德行动结合起来：不仅说明客户是谁，还要说明施耐德应如何进入、扩大、守住或修复关系。
+4. 报告要把企业视角和施耐德行动结合起来：不仅说明企业是谁，还要说明施耐德应如何进入、扩大、守住或修复关系。
 5. 涉及采购、价格、满意度、决策链等内部敏感信息时，应列为CRM/销售访谈补充项。
 
 输出结构：
-# {customer_name}深度客户洞察报告
+# {customer_name}深度企业洞察报告
 
 ## 0. 高层摘要
-- 客户定位与业务性质
+- 企业定位与业务性质
 - 对施耐德的价值判断
 - 最值得优先推进的3-5个机会
 - 最大风险与关系短板
@@ -97,7 +97,7 @@ def render_research_prompt(customer_name: str, report_year: int | None = None) -
 def render_report_template(customer_name: str, report_year: int | None = None) -> str:
     year = report_year or date.today().year
     lines = [
-        f"# {customer_name}深度客户洞察报告",
+        f"# {customer_name}深度企业洞察报告",
         "",
         f"- 报告年度：{year}",
         f"- 生成日期：{date.today().isoformat()}",
@@ -106,7 +106,7 @@ def render_report_template(customer_name: str, report_year: int | None = None) -
         "",
         "## 0. 高层摘要",
         "",
-        "- 客户定位：待研究。",
+        "- 企业定位：待研究。",
         "- 施耐德价值判断：待研究。",
         "- 优先机会：待研究。",
         "- 关键风险：待研究。",

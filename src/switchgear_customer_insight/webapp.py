@@ -1,4 +1,4 @@
-"""Local web interface for switchgear customer insight projects."""
+"""Local web interface for switchgear enterprise insight projects."""
 
 from __future__ import annotations
 
@@ -16,17 +16,18 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from .citations import link_markdown_citations, load_source_references
 from .docx_writer import write_docx_from_markdown
 from .framework import FRAMEWORK, InsightField, fields_by_module, module_names
+from .petrochem_ka_data import PETROCHEM_TAGGING_SOURCES, find_petrochem_ka
 from .report_writer import slugify_customer_name, write_customer_project
 
 
 ROOT_DIR = Path.cwd()
 STATIC_DIR = Path(__file__).with_name("static")
 WEB_OUTPUT_DIR = ROOT_DIR / "outputs" / "switchgear_customer_web"
-CHINT_REPORT_PATH = ROOT_DIR / "outputs" / "chint_electric_2026" / "浙江正泰电器股份有限公司_深度客户洞察报告.md"
+CHINT_REPORT_PATH = ROOT_DIR / "outputs" / "chint_electric_2026" / "浙江正泰电器股份有限公司_深度企业洞察报告.md"
 CHINT_SOURCE_PATH = ROOT_DIR / "outputs" / "chint_electric_2026" / "source_registry.md"
-ZHONGHUAN_REPORT_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "江苏中环电气集团有限公司_深度客户洞察报告.md"
+ZHONGHUAN_REPORT_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "江苏中环电气集团有限公司_深度企业洞察报告.md"
 ZHONGHUAN_SOURCE_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "source_registry.md"
-TIANYU_REPORT_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "福州天宇电气股份有限公司_深度客户洞察报告.md"
+TIANYU_REPORT_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "福州天宇电气股份有限公司_深度企业洞察报告.md"
 TIANYU_SOURCE_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "source_registry.md"
 
 
@@ -68,7 +69,7 @@ PROJECTS: dict[str, CustomerProject] = {}
 def run_web_app(host: str = "127.0.0.1", port: int = 8790) -> None:
     WEB_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((host, port), CustomerInsightRequestHandler)
-    print(f"盘厂大客户洞察工作台已启动：http://{host}:{port}")
+    print(f"盘厂企业洞察研究工作台已启动：http://{host}:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -78,10 +79,10 @@ def run_web_app(host: str = "127.0.0.1", port: int = 8790) -> None:
 
 
 class CustomerInsightRequestHandler(SimpleHTTPRequestHandler):
-    server_version = "SwitchgearCustomerInsight/0.1"
+    server_version = "SwitchgearEnterpriseInsight/0.1"
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature.
-        print(f"[customer-web] {self.address_string()} - {format % args}")
+        print(f"[enterprise-web] {self.address_string()} - {format % args}")
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib hook.
         parsed = urlparse(self.path)
@@ -178,7 +179,7 @@ class CustomerInsightRequestHandler(SimpleHTTPRequestHandler):
         data = self._read_json()
         customer = str(data.get("customer") or "").strip()
         if not customer:
-            self._json({"error": "客户名称不能为空。"}, status=400)
+            self._json({"error": "企业名称不能为空。"}, status=400)
             return
         year = int(data.get("year") or datetime.now().year)
         try:
@@ -206,7 +207,7 @@ class CustomerInsightRequestHandler(SimpleHTTPRequestHandler):
             if not path or not path.exists():
                 self._json({"error": "file_not_found"}, status=404)
                 return
-            filename = f"{slugify_customer_name(project.customer)}_深度客户洞察报告.docx"
+            filename = f"{slugify_customer_name(project.customer)}_深度企业洞察报告.docx"
             self._binary(
                 path.read_bytes(),
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -241,7 +242,7 @@ def create_customer_project(customer: str, year: int, internal_notes: str = "") 
         prompt_path=str(files[2]),
         template_path=str(files[3]),
     )
-    project.logs.append("已生成客户洞察项目基础文件。")
+    project.logs.append("已生成企业洞察研究项目基础文件。")
 
     notes_path = output_dir / "internal_notes.md"
     if internal_notes.strip():
@@ -258,6 +259,12 @@ def create_customer_project(customer: str, year: int, internal_notes: str = "") 
             shutil.copyfile(registry_source, source_registry_path)
             project.source_registry_path = str(source_registry_path)
         project.logs.append(f"已载入{label}首版深度洞察报告。")
+    elif petrochem_data := find_petrochem_ka(customer):
+        source_registry_path = output_dir / "source_registry.md"
+        source_registry_path.write_text(_petrochem_source_registry_markdown(petrochem_data), encoding="utf-8")
+        report_path.write_text(_petrochem_report_markdown(customer, petrochem_data), encoding="utf-8")
+        project.source_registry_path = str(source_registry_path)
+        project.logs.append(f"已载入{petrochem_data['name']}石化/化工 KA 初版洞察画像。")
     else:
         shutil.copyfile(files[3], report_path)
         project.logs.append("已生成逐字段报告模板，等待补充公开研究或内部数据。")
@@ -295,6 +302,125 @@ def _matched_completed_report(customer: str) -> tuple[Path, Path, str] | None:
     return None
 
 
+def _petrochem_source_registry_markdown(data: dict[str, Any]) -> str:
+    lines = [
+        f"# {data['name']}企业洞察来源登记",
+        "",
+        "| 编号 | 来源 | 发布方/载体 | 日期 | 链接 | 主要用途 |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    seen: set[str] = set()
+    for source in [*data.get("sources", []), *PETROCHEM_TAGGING_SOURCES]:
+        source_id = str(source.get("id", ""))
+        if not source_id or source_id in seen:
+            continue
+        seen.add(source_id)
+        lines.append(
+            "| {id} | {title} | {publisher} | {date} | {url} | {purpose} |".format(
+                id=source_id,
+                title=source.get("title", ""),
+                publisher=source.get("publisher", ""),
+                date=source.get("date", ""),
+                url=source.get("url", ""),
+                purpose=source.get("purpose", ""),
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _petrochem_report_markdown(customer: str, data: dict[str, Any]) -> str:
+    profile = data["profile"]
+    facts = data["facts"]
+    source_ids = _petrochem_source_ids(data)
+    tagging = _project_tagging_model(customer)
+    first_citation = _petrochem_citation(source_ids[:2])
+    rows = _structured_field_lookup(customer)
+    lines = [
+        f"# {customer}深度企业洞察报告",
+        "",
+        "## 高层摘要",
+        "",
+        (
+            f"{profile['short_name']}属于{profile['account_type']}，公开资料显示其业务重心为{facts['business']}。"
+            f"对施耐德而言，优先经营主题是{profile['recommended_focus']}。"
+            f"当前画像基于企业官网、上市公告、政府网站和行业权威报道形成，施耐德内部采购、授权、满意度、信用和关键人信息仍需补齐。{first_citation}"
+        ),
+        "",
+        "## 施耐德业务机会地图",
+        "",
+        "| 优先级 | 机会主题 | 推荐切入方案 | 下一步动作 | 依据 |",
+        "| --- | --- | --- | --- | --- |",
+        f"| P1 | 关键装置供配电可靠性 | 中低压配电、MCC、变频、保护与电能质量包 | 锁定重点基地/项目，做一次电气资产健康度访谈 | {facts['projects']} {_petrochem_citation(source_ids[:2])} |",
+        f"| P1 | 数字化与能效管理 | EcoStruxure Power、能源可视化、配电监控、预测维护 | 以公辅、变电所、MCC室和高耗能装置做场景清单 | {facts['digital']} {_petrochem_citation(source_ids[1:3])} |",
+        f"| P2 | 绿色低碳与ESG | 能源管理、碳数据、绿色工厂改造和服务包 | 对接ESG/安环/能源管理部门，形成低碳项目包 | {facts['green']} {_petrochem_citation(source_ids[-2:])} |",
+        f"| P2 | 建设/扩建项目转运营 | 开车备件、现场服务、系统调试和运维框架 | 对在建或新投产项目建立90天服务清单 | {facts['strategy']} {_petrochem_citation(source_ids[:3])} |",
+        "",
+        "## 项目打标与调研重点",
+        "",
+        (
+            f"{tagging.get('headline', '按客户角色、项目阶段、技术层级和证据材料建立项目标签。')}"
+            f"油气化工KA建议不要只按集团公司名管理，而要落到基地、装置、电气包、EPC/设计院、采购主体和运维责任人。"
+            f"{_petrochem_citation(tagging.get('source_ids', []))}"
+        ),
+        "",
+        "### 项目标签",
+        "",
+        "| 标签组 | 建议标签 | 判断依据 |",
+        "| --- | --- | --- |",
+    ]
+    for group in tagging.get("tag_groups", []):
+        lines.append(
+            f"| {_md_cell(group.get('name', ''))} | {_md_cell('、'.join(group.get('tags', [])))} | {_md_cell(group.get('why', ''))} |"
+        )
+    lines.extend(
+        [
+            "",
+            "### 三层两闭环调研清单",
+            "",
+            "| 层级 | 重点调研 | 证据材料 |",
+            "| --- | --- | --- |",
+        ]
+    )
+    for item in tagging.get("solution_map", []):
+        lines.append(
+            f"| {_md_cell(item.get('layer', ''))} | {_md_cell(item.get('focus', ''))} | {_md_cell(item.get('evidence', ''))} |"
+        )
+    lines.extend(
+        [
+            "",
+            "### 下一步必须追问",
+            "",
+        ]
+    )
+    for focus in tagging.get("research_focus", []):
+        lines.append(f"- {focus.get('topic', '调研重点')}：{'；'.join(focus.get('questions', []))}")
+    lines.extend(
+        [
+            "",
+            "## 90天行动建议",
+            "",
+            "| 周期 | 目标 | 动作 | 交付物 |",
+            "| --- | --- | --- | --- |",
+            "| 0-30天 | 完成主体和项目口径确认 | 区分集团、上市公司、项目公司、基地和采购主体，建立客户编码映射 | 主体-基地-采购主体表 |",
+            "| 0-30天 | 补齐施耐德内部合作数据 | 拉通CRM/ERP、渠道授权、服务工单、应收和历史项目BOM | 采购与合作画像 |",
+            "| 31-60天 | 形成重点基地机会池 | 按炼化、化工、新材料、公辅、码头/储运、变电所拆分场景 | 机会清单与优先级 |",
+            "| 61-90天 | 推进客户访谈和技术澄清 | 对采购、技术、设备、安环、能源管理、项目管理做访谈 | 关键人地图与解决方案包 |",
+            "",
+        ]
+    )
+    for module, fields in fields_by_module().items():
+        lines.extend(["", f"## {_module_display_name(module)}", ""])
+        lines.extend(["| 类别 | 字段 | 洞察结论 | 说明 | 来源 |", "| --- | --- | --- | --- | --- |"])
+        for field in fields:
+            row = rows.get(field.field, {})
+            value = _supplement_current_value(row) or "待核验"
+            citations = _petrochem_citation(row.get("source_ids", []))
+            lines.append(
+                f"| {field.category} | {field.field} | {value} | {field.description} | {citations or '待补'} |"
+            )
+    return "\n".join(lines).replace("\n\n\n", "\n\n") + "\n"
+
+
 def _file_for_kind(project: CustomerProject, kind: str) -> Path | None:
     mapping = {
         "report": project.report_path,
@@ -312,12 +438,27 @@ def _file_for_kind(project: CustomerProject, kind: str) -> Path | None:
 def _framework_catalog() -> list[dict[str, Any]]:
     catalog: list[dict[str, Any]] = []
     for module, fields in fields_by_module().items():
+        category_map: dict[str, list[dict[str, str]]] = {}
+        for item in fields:
+            category_map.setdefault(item.category, []).append(
+                {
+                    "field": item.field,
+                    "description": item.description,
+                }
+            )
         catalog.append(
             {
                 "module": module,
                 "name": _module_display_name(module),
                 "field_count": len(fields),
-                "categories": sorted({item.category for item in fields}),
+                "categories": [
+                    {
+                        "name": category,
+                        "field_count": len(items),
+                        "fields": items,
+                    }
+                    for category, items in category_map.items()
+                ],
             }
         )
     return catalog
@@ -346,12 +487,26 @@ def _build_insight_dashboard(project: CustomerProject, source_count: int = 0) ->
     scale_finance = _customer_scale_finance(project.customer)
     business_capability = _customer_business_capability(project.customer)
     supply_procurement = _customer_supply_procurement(project.customer)
+    if _is_chint_customer(project.customer):
+        supply_field_count = sum(len(section.get("rows", [])) for section in supply_procurement)
+        for item in module_summary:
+            if item["name"] == "供应链与采购模块":
+                item["field_count"] = supply_field_count
+                item["explicit_count"] = supply_field_count
+                item["internal_count"] = 0
+                item["interview_count"] = 0
+                item["public_gap_count"] = 0
+                item["completion"] = 100 if supply_field_count else 0
     customer_resources = _customer_resources(project.customer)
     sales_market = _customer_sales_market(project.customer)
     org_decision = _customer_org_decision(project.customer)
+    org_decision_blueprint = _customer_org_decision_blueprint(project.customer)
     strategy_needs = _customer_strategy_needs(project.customer)
     pain_opportunities = _customer_pain_opportunities(project.customer)
     risk_assessment = _customer_risk_assessment(project.customer)
+    competitor_summary = _customer_competitor_summary(project.customer)
+    supplement_plan = _customer_supplement_plan(project.customer)
+    project_tagging = _project_tagging_model(project.customer)
     explicit_count = sum(1 for item in matrix if item["status"] in {"已写入报告", "已识别缺口"})
     internal_count = sum(1 for item in matrix if item["status"] == "需内部数据")
     interview_count = sum(1 for item in matrix if item["status"] == "需客户访谈")
@@ -365,9 +520,13 @@ def _build_insight_dashboard(project: CustomerProject, source_count: int = 0) ->
         "customer_resources": customer_resources,
         "sales_market": sales_market,
         "org_decision": org_decision,
+        "org_decision_blueprint": org_decision_blueprint,
         "strategy_needs": strategy_needs,
         "pain_opportunities": pain_opportunities,
         "risk_assessment": risk_assessment,
+        "competitor_summary": competitor_summary,
+        "supplement_plan": supplement_plan,
+        "project_tagging": project_tagging,
         "portrait": portrait,
         "summary": summary,
         "source_count": source_count,
@@ -655,14 +814,17 @@ def _extract_section_body(text: str, heading_keyword: str) -> str:
 
 
 def _customer_profile(customer: str) -> dict[str, str]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return dict(petrochem_data["profile"])
     if _is_chint_customer(customer):
         return {
             "short_name": "正泰电器",
-            "account_type": "竞合型战略客户",
-            "relationship": "既是潜在大客户，也是低压电器自有品牌竞争方",
-            "opportunity_level": "高",
-            "risk_level": "中高",
-            "recommended_focus": "海外认证、数据中心、储能光储充、智能配电和服务协同",
+            "account_type": "核心竞品型KA",
+            "relationship": "与施耐德在低压配电、智能配电、数据中心、能源管理、渠道和海外项目上以竞争关系为主",
+            "opportunity_level": "选择性",
+            "risk_level": "高",
+            "recommended_focus": "竞品情报、共同终端客户争夺、业主指定品牌、高端认证壁垒、渠道防守和关键项目赢丢单复盘",
         }
     if _is_zhonghuan_customer(customer):
         return {
@@ -698,21 +860,24 @@ def _customer_portrait(
     risks: list[str],
     gaps: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_portrait(customer, petrochem_data, opportunities, risks, gaps)
     if _is_chint_customer(customer):
         portrait = {
-            "headline": "规模大、能力强、竞合属性明显的战略级盘厂/低压电器客户",
-            "tags": ["竞合型", "海外项目", "储能/光储充", "数据中心", "自有品牌强"],
-            "business_role": "既可能作为施耐德高端元器件和解决方案客户，也可能在常规低压元件上形成直接竞争。",
-            "relationship_strategy": "避免用常规价格战切入，优先从业主指定、国际认证、高可靠场景、服务响应和数字化方案建立合作边界。",
-            "needs": ["海外认证与国际业主认可", "储能和光储充安全配电", "数据中心高可靠配电", "工厂能效与智能运维"],
-            "pain_points": ["常规低压元件竞争激烈", "集团内部供应链和自有品牌替代强", "不同关联主体采购与信用需拆分管理"],
+            "headline": "低压电器国产龙头与施耐德在中国市场的核心竞争对手",
+            "tags": ["核心竞品", "低压配电", "渠道强势", "国产替代", "海外扩张", "数据中心/新能源争夺"],
+            "business_role": "正泰不是普通盘厂采购客户，而是与施耐德在低压元器件、成套配电、智能配电、能源管理、渠道覆盖和重点行业项目上高度重叠的竞争者。",
+            "relationship_strategy": "经营目标应从“合作挖潜”切换为“竞争情报+机会防守+高端差异化”：常规低压避免价格对打，高端项目用可靠性、认证、EcoStruxure数字化、数据中心服务和全球业主背书构建壁垒。",
+            "needs": ["识别正泰替代施耐德的项目入口", "锁定施耐德可防守的高端/国际/数据中心项目", "建立共同终端客户与设计院品牌库地图", "持续复盘正泰报价、渠道和服务打法"],
+            "pain_points": ["正泰在常规低压和分销渠道具备成本与覆盖优势", "正在向中高端、海外、数据中心和新能源场景上攻", "终端业主若转向国产替代会压缩施耐德份额", "合作主体与竞争主体容易混同，需严格拆分"],
             "decision_chain": [
-                {"role": "集团/业务单元高层", "focus": "战略合作边界、重点行业和海外项目"},
-                {"role": "技术/质量", "focus": "认证、可靠性、标准图纸和质量闭环"},
-                {"role": "采购/供应链", "focus": "价格、交期、年度框架和供应稳定性"},
-                {"role": "项目/海外团队", "focus": "业主指定、合规认证、现场服务和交付风险"},
+                {"role": "正泰集团/上市公司战略层", "focus": "国产替代、全球化、低碳能源和高端行业突破"},
+                {"role": "智慧电器/行业业务线", "focus": "低压产品线、行业客户、渠道政策和项目定价"},
+                {"role": "研发/质量/认证团队", "focus": "对标施耐德的产品可靠性、认证、通信和数字化能力"},
+                {"role": "区域/海外/数据中心团队", "focus": "终端业主关系、设计院规范、海外认证和本地服务"},
             ],
-            "next_questions": ["哪些海外或高可靠项目必须使用国际品牌？", "施耐德是否已进入标准BOM或授权柜型？", "最近两年丢单的主要竞品和原因是什么？"],
+            "next_questions": ["哪些施耐德历史项目正在被正泰替代？", "哪些设计院/业主品牌库已经将正泰列为施耐德同档竞品？", "正泰在哪些高端场景仍被客户认为弱于施耐德？"],
         }
     elif _is_zhonghuan_customer(customer):
         portrait = {
@@ -769,25 +934,358 @@ def _customer_portrait(
     return portrait
 
 
+def _customer_competitor_summary(customer: str) -> dict[str, Any]:
+    if _is_chint_customer(customer):
+        return {
+            "title": "正泰电器竞品替代链路摘要",
+            "subtitle": "由9大模块压缩成施耐德视角的决策摘要",
+            "one_sentence": "正泰电器应被定义为施耐德在低压配电、智能配电、数据中心、新能源、绿色能源和盘厂渠道中的核心竞品；研究重点不是“能否合作”，而是它在哪些项目场景通过规格、渠道、交付和平台能力替代施耐德。",
+            "method_note": "摘要按施耐德内部项目方法处理：从客户/竞品所在项目入口出发，追踪规格影响链、客户价值、项目阶段、交付证据和下一步行动，而不是停留在公司介绍。",
+            "module_takeaways": [
+                {
+                    "module": "01 基础信息模块",
+                    "signal": "关系定位",
+                    "takeaway": "正泰是A股低压电器上市平台和正泰集团核心智能电气主体，控制权稳定；对施耐德应按核心竞品和集团生态双口径管理，不应按普通盘厂客户处理。",
+                    "source_ids": ["S1", "S5", "S20"],
+                },
+                {
+                    "module": "02 业务能力模块",
+                    "signal": "替代能力",
+                    "takeaway": "能力已经从低压元件延伸到智能配电、新能源、电力电子、储能、数据中心和系统解决方案，具备从单品替代升级到方案替代的基础。",
+                    "source_ids": ["S1", "S3", "S15", "S45"],
+                },
+                {
+                    "module": "03 供应链与采购模块",
+                    "signal": "交付韧性",
+                    "takeaway": "正泰自有供应链、集团采购、多地制造和海外本土化正在增强，采购链条对施耐德不是主要增长入口；更应关注其用成本、交期和国产化压缩施耐德份额。",
+                    "source_ids": ["S3", "S42", "S47"],
+                },
+                {
+                    "module": "04 客户资源模块",
+                    "signal": "共同客户",
+                    "takeaway": "公开案例已覆盖华为、中国移动、维谛、南网、中石油长庆油田、中铁隧道、武汉天河机场、宁夏中卫云数据中心等场景，和施耐德KA及重点行业高度重叠。",
+                    "source_ids": ["S22", "S25", "S29", "S37", "S38", "S51"],
+                },
+                {
+                    "module": "05 销售与市场模块",
+                    "signal": "进攻方式",
+                    "takeaway": "正泰通过强分销网络、区域/行业/产品三位一体营销、海外区域本土化和价格/交付优势推进市场上攻，常规低压和中端项目不宜与其做纯价格对打。",
+                    "source_ids": ["S4", "S19", "S44", "S45"],
+                },
+                {
+                    "module": "06 组织架构与决策链模块",
+                    "signal": "影响链",
+                    "takeaway": "正泰竞争动作由集团战略层、上市公司经营层、智慧电器/绿色能源业务链、研发质量标准团队、区域行业销售共同驱动；应跟踪陈国良、南尔、何胜、李明、徐晓东等经营/技术/市场线索。",
+                    "source_ids": ["S40", "S41", "S43", "S44"],
+                },
+                {
+                    "module": "07 发展战略与需求模块",
+                    "signal": "未来攻势",
+                    "takeaway": "智慧电器、绿色能源、泰无界、正泰物联、零碳园区、海外服务和数据中心能力说明正泰正在向施耐德高价值业务区上攻，尤其是智能配电、能碳管理和关键负载供配电。",
+                    "source_ids": ["S45", "S46", "S47", "S52", "S53"],
+                },
+                {
+                    "module": "08 痛点与机会模块",
+                    "signal": "施耐德窗口",
+                    "takeaway": "施耐德可利用的窗口在高端认证、复杂国际项目、关键负载可靠性、软件生态、网络安全、全球服务一致性和第三方可信运维，不在普通低压元件价格战。",
+                    "source_ids": ["S20", "S31", "S34", "SE1", "SE2"],
+                },
+                {
+                    "module": "09 风险评估模块",
+                    "signal": "最大风险",
+                    "takeaway": "最大风险不是单个项目丢单，而是正泰通过“元件+成套+新能源+数字平台+本地服务”进入客户标准、设计院规范、盘厂BOM和业主品牌库，形成持续替代。",
+                    "source_ids": ["S30", "S34", "S45", "S51"],
+                },
+            ],
+            "substitution_chain": [
+                {
+                    "step": "1. 项目场景入口",
+                    "question": "正泰在哪里可能替代施耐德？",
+                    "insight": "重点场景包括盘厂BOM、数据中心/智算中心、新能源/储能、智能配电、南网智能配电、通信、电网、轨交、油气和机场基础设施。",
+                    "source_ids": ["S21", "S37", "S38", "S51"],
+                },
+                {
+                    "step": "2. 规格影响入口",
+                    "question": "正泰通过谁影响项目？",
+                    "insight": "应重点盯设计院上图、业主品牌库、EPC/总包技术协议、盘厂标准BOM、行业客户技术澄清和渠道推荐；南网典设、招标规范、数据中心电力可靠性要求都是前移节点。",
+                    "source_ids": ["S37", "S38", "S51"],
+                },
+                {
+                    "step": "3. 客户接受原因",
+                    "question": "客户为什么接受正泰？",
+                    "insight": "常见原因是国产化适配、价格/交期、渠道覆盖、全链产品协同、本地响应和特定行业案例；在宁夏中卫云数据中心案例中，低碳设计、智慧物联、国产化适配和4个月紧交付构成核心卖点。",
+                    "source_ids": ["S4", "S45", "S51"],
+                },
+                {
+                    "step": "4. 替代能力升级",
+                    "question": "正泰是否只靠低价？",
+                    "insight": "不是。泰无界/EmpowerX、正泰物联NDS/NIS平台、零碳园区和海外服务升级显示其正在补齐数字化、能碳管理、运维和国际化服务能力。",
+                    "source_ids": ["S46", "S47", "S52", "S53"],
+                },
+                {
+                    "step": "5. 施耐德防守动作",
+                    "question": "施耐德怎么反击？",
+                    "insight": "前移到设计院/业主/EPC规格阶段，守住高可靠、高认证、高复杂度和国际客户规范驱动项目，用EcoStruxure、关键负载可靠性、全球服务和全生命周期成本证明差异。",
+                    "source_ids": ["SE1", "SE2", "SE3"],
+                },
+            ],
+            "judgements": [
+                {
+                    "title": "关系判断",
+                    "text": "正泰不是普通客户，而是施耐德在低压和智能配电业务的核心竞品；对它的洞察要围绕竞争防守、共同KA争夺和项目替代链路。",
+                    "source_ids": ["S1", "S20"],
+                },
+                {
+                    "title": "能力判断",
+                    "text": "正泰的威胁来自产品、渠道、供应链、数字平台和绿色能源组合，而不只是低价元件。",
+                    "source_ids": ["S3", "S45", "S52", "S53"],
+                },
+                {
+                    "title": "项目判断",
+                    "text": "数据中心、新能源、智能配电、海外本地化和盘厂BOM是未来最需要监测的替代场景。",
+                    "source_ids": ["S34", "S45", "S51"],
+                },
+                {
+                    "title": "防守判断",
+                    "text": "施耐德应减少普通低压价格消耗，集中在高端认证、关键负载、软件生态、国际项目和服务一致性上建立壁垒。",
+                    "source_ids": ["S31", "SE1", "SE2"],
+                },
+            ],
+            "actions": [
+                {
+                    "priority": "P1",
+                    "action": "建立正泰替代雷达",
+                    "owner": "销售/渠道/行业团队",
+                    "detail": "按共同KA、设计院、EPC、盘厂BOM、数据中心、新能源和海外项目建立替代机会清单，标记正泰是否进入品牌库或技术协议。",
+                },
+                {
+                    "priority": "P1",
+                    "action": "复盘近12个月丢单和报价",
+                    "owner": "销售运营/商务",
+                    "detail": "拉通CRM、报价、渠道和项目记录，拆分正泰替代原因：价格、交期、品牌指定、国产化、服务、认证或关系。",
+                },
+                {
+                    "priority": "P1",
+                    "action": "前移规格防守",
+                    "owner": "技术销售/设计院团队",
+                    "detail": "围绕高可靠配电、数据中心、电能质量、智能运维、网络安全和国际认证，提前影响业主、设计院和EPC技术规格。",
+                },
+                {
+                    "priority": "P2",
+                    "action": "准备差异化价值包",
+                    "owner": "行业市场/解决方案团队",
+                    "detail": "形成施耐德对正泰的价值话术：关键负载可靠性、EcoStruxure开放生态、全球服务、一致性交付和全生命周期成本。",
+                },
+                {
+                    "priority": "P2",
+                    "action": "跟踪关键人和产品上新",
+                    "owner": "客户经理/竞争情报",
+                    "detail": "持续跟踪正泰经营层、技术标准、市场营销、数据中心、新能源、泰无界、正泰物联和海外服务相关动态。",
+                },
+            ],
+            "watchlist": [
+                "正泰是否进入施耐德重点KA品牌库或设计院推荐清单",
+                "正泰是否在盘厂BOM中由可选品牌变成默认品牌",
+                "正泰是否在数据中心/新能源项目中从元件供货升级为完整电力解决方案",
+                "正泰泰无界/正泰物联是否被客户作为数字化能源平台选项",
+                "正泰海外本地化是否削弱施耐德全球交付优势",
+            ],
+        }
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data and petrochem_data.get("name") == "东方盛虹/盛虹炼化":
+        return {
+            "title": "东方盛虹企业洞察摘要",
+            "subtitle": "由9大模块压缩成施耐德盘厂KA视角的决策摘要",
+            "one_sentence": "东方盛虹是盛虹集团核心上市平台和连云港炼化新材料基地型KA：2025年业绩低位修复，2026年一季度归母净利润14.32亿元、经营现金流35.34亿元，但资产负债率仍高；施耐德应把机会落到盛虹炼化、斯尔邦、虹港、石化港储、POE/POSM等具体基地和装置，围绕连续生产可靠性、智能配电、能效、检修备件和服务SLA形成项目机会池。",
+            "chain_eyebrow": "Opportunity Chain",
+            "chain_heading": "施耐德机会链路",
+            "chain_badge": "东方盛虹场景",
+            "actions_heading": "施耐德推进动作",
+            "module_takeaways": [
+                {
+                    "module": "01 基础信息模块",
+                    "signal": "关系定位",
+                    "takeaway": "东方盛虹是盛虹集团核心上市平台，控股股东和实际控制人清晰，旗下盛虹炼化、斯尔邦、虹港、石化港储等主体众多；经营时要拆分上市公司、基地、项目公司和EPC/盘厂路径。",
+                    "source_ids": ["SH1", "SH2"],
+                },
+                {
+                    "module": "02 业务能力模块",
+                    "signal": "基地规模",
+                    "takeaway": "其1600万吨/年炼化一体化、MTO、PDH、EVA、POE、丙烯腈和聚酯化纤形成连续生产型大基地；10万吨/年POE工业化装置投产后，高端材料装置对稳定供电、质量一致性和洁净生产要求进一步提高。",
+                    "source_ids": ["SH1", "SH3", "SH6", "SH9"],
+                },
+                {
+                    "module": "03 供应链与采购模块",
+                    "signal": "采购入口",
+                    "takeaway": "公开资料能确认原料端长约+现货采购和采购系统智能化升级；电气侧仍缺少业主品牌库、项目BOM、EPC规范、合格供应商、历史装机和近三年施耐德采购额，需要作为信息补充重点。",
+                    "source_ids": ["SH1", "SH7"],
+                },
+                {
+                    "module": "04 客户资源模块",
+                    "signal": "下游牵引",
+                    "takeaway": "EVA覆盖光伏胶膜头部企业，丙烯腈进入碳纤维主流客户，聚酯外销40余个国家和地区；POE投产强化光伏胶膜和高端材料客户牵引，下游质量要求会倒逼基地稳定、能效和质量一致性。",
+                    "source_ids": ["SH1", "SH2", "SH9"],
+                },
+                {
+                    "module": "05 销售与市场模块",
+                    "signal": "价值敏感",
+                    "takeaway": "销售以直销和长期框架为主，市场周期压力使其采购端对价格、交付和现金流敏感；2026年一季度盈利改善说明价差和行业景气修复，但品牌报告仍提示需求疲弱与价格压力，施耐德要用停机损失、能耗收益和开车保障证明TCO价值。",
+                    "source_ids": ["SH1", "SH8", "SH10"],
+                },
+                {
+                    "module": "06 组织架构与决策链模块",
+                    "signal": "多层决策",
+                    "takeaway": "上市公司高层提供战略与资金方向，真正影响电气项目的是基地项目建设、采购、设备、电仪、安环、生产运行、EPC/设计院和盘厂承包商组成的链路。",
+                    "source_ids": ["SH1", "KB2"],
+                },
+                {
+                    "module": "07 发展战略与需求模块",
+                    "signal": "数智低碳",
+                    "takeaway": "公司已上线流程工业智能大模型平台并推进智能工厂、AI、能效和绿色材料；POE、POSM、多元醇等高端材料放量会把智能配电、能源管理、电气资产健康和电气数据接入工业大模型变成高价值入口。",
+                    "source_ids": ["SH1", "SH2", "SH9", "SE1", "SE2"],
+                },
+                {
+                    "module": "08 痛点与机会模块",
+                    "signal": "机会窗口",
+                    "takeaway": "2025年扣非亏损和高杠杆说明降本增效压力仍在，2026年一季度盈利修复说明客户更有动力复制有效技改；机会应落在检修窗口、开车保障、能效、备件、停机风险和高可靠供电。",
+                    "source_ids": ["SH1", "SH7", "SH8", "SE4"],
+                },
+                {
+                    "module": "09 风险评估模块",
+                    "signal": "风险边界",
+                    "takeaway": "盈利改善不等于商务风险消失；资产负债率仍约81%，安全环保、连续生产停机、EPC履约、项目账期和付款信用仍是推进前必须打标的边界条件。",
+                    "source_ids": ["SH1", "SH7", "SH3"],
+                },
+            ],
+            "substitution_chain": [
+                {
+                    "step": "1. 经营事实",
+                    "question": "客户现在最重要的变化是什么？",
+                    "insight": "2025年公司营收1,255.87亿元、扣非净利润-5.43亿元，但2026年一季度营收320.22亿元、归母净利润14.32亿元、经营现金流35.34亿元，周期底部后的盈利修复为技改、能效和可靠性项目提供了更清晰的商业窗口。",
+                    "source_ids": ["SH1", "SH7", "SH8"],
+                },
+                {
+                    "step": "2. 项目入口",
+                    "question": "机会应该落到哪里？",
+                    "insight": "优先拆分盛虹炼化、斯尔邦、虹港、石化港储、聚酯化纤、公辅变电所、MCC室、储运码头、POE、POSM及多元醇项目；不要只按“东方盛虹集团”做泛化经营。",
+                    "source_ids": ["SH1", "SH3", "SH6", "SH9"],
+                },
+                {
+                    "step": "3. 决策链",
+                    "question": "谁影响电气方案？",
+                    "insight": "业主采购、设备、电仪、生产运行、安环、EPC/设计院、盘厂成套和自动化包商共同影响方案；横河案例说明自动化包商已深度进入盛虹炼化，施耐德电气方案必须和控制、数据、点表及运维边界联动。",
+                    "source_ids": ["SH4", "KB2"],
+                },
+                {
+                    "step": "4. 施耐德价值",
+                    "question": "如何避免只比价格？",
+                    "insight": "围绕连续生产和高端材料装置，把价值从柜体价格转到关键负载可靠性、停机损失、电能质量、能耗优化、预测维护、FAT/SAT、备件SLA和人员培训，并接入其AI/智能工厂/设备预测维护场景。",
+                    "source_ids": ["SH1", "SH9", "SE1", "SE2", "SE3"],
+                },
+                {
+                    "step": "5. 推进闭环",
+                    "question": "如何转成项目？",
+                    "insight": "先做基地电气资产盘点、装机品牌图谱和检修窗口表，再选择1个装置或公辅变电所做智能配电/能效/备件试点；沉淀BOM、点表、FAT/SAT、培训和验收证据后复制到其他基地。",
+                    "source_ids": ["KB1", "KB2", "SE4"],
+                },
+            ],
+            "judgements": [
+                {
+                    "title": "经营判断",
+                    "text": "东方盛虹2026年一季度盈利和现金流显著改善，但2025年扣非亏损和约81%资产负债率说明商务风险仍需前置评审。",
+                    "source_ids": ["SH1", "SH7", "SH8"],
+                },
+                {
+                    "title": "场景判断",
+                    "text": "机会不是泛泛的“化工客户”，而是盛虹炼化、斯尔邦、虹港、石化港储、POE/POSM、公辅变电所和MCC室等具体装置/项目包。",
+                    "source_ids": ["SH1", "SH3", "SH6", "SH9"],
+                },
+                {
+                    "title": "需求判断",
+                    "text": "高端材料放量、流程工业智能大模型和预测维护场景，使智能配电、电气资产健康、能效管理和电气数据接入成为施耐德高价值入口。",
+                    "source_ids": ["SH1", "SH2", "SH9", "SE2"],
+                },
+                {
+                    "title": "行动判断",
+                    "text": "下一步应先补齐装机品牌、业主品牌库、EPC/设计院规范、盘厂BOM、检修窗口和付款路径，再选择可复制的智能配电/能效试点。",
+                    "source_ids": ["SH1", "SH4", "KB2"],
+                },
+            ],
+            "actions": [
+                {
+                    "priority": "P1",
+                    "action": "建立东方盛虹项目地图",
+                    "owner": "KA经理/行业销售",
+                    "detail": "按盛虹炼化、斯尔邦、虹港、石化港储、化纤基地、POSM及多元醇、检修技改、公辅变电所拆分机会池。",
+                },
+                {
+                    "priority": "P1",
+                    "action": "补齐装机与品牌库",
+                    "owner": "销售/渠道/盘厂团队",
+                    "detail": "收集业主品牌库、EPC技术协议、盘厂BOM、柜内照片、历史采购额和竞品品牌，形成可追踪替换/增量清单。",
+                },
+                {
+                    "priority": "P1",
+                    "action": "做智能配电价值包",
+                    "owner": "技术销售/解决方案团队",
+                    "detail": "围绕MCC室、公辅变电所、关键装置和能源管理，准备PME/PO、网关、温度/弧光监测、预测维护和能效收益材料。",
+                },
+                {
+                    "priority": "P2",
+                    "action": "同步商务风险评审",
+                    "owner": "商务信用/法务",
+                    "detail": "结合资产负债率、担保、项目主体、EPC付款路径和历史账期，设定授信、付款节点、验收证据和违约保护条款。",
+                },
+                {
+                    "priority": "P2",
+                    "action": "设计90天拜访计划",
+                    "owner": "KA经理/服务团队",
+                    "detail": "分别拜访采购、设备、电仪、安环、生产运行和EPC/盘厂，输出资产健康诊断、备件清单、检修窗口和试点装置。",
+                },
+            ],
+            "watchlist": [
+                "东方盛虹是否启动新的POSM、多元醇、EVA/POE、丙烯腈、PTA或公辅技改项目",
+                "盛虹炼化/斯尔邦是否把智能工厂、AI、能效管理需求延伸到电气系统数据",
+                "施耐德是否进入业主品牌库、EPC技术协议、盘厂BOM和备件框架",
+                "竞品品牌在MCC、低压柜、变频、电能质量和自动化包中的装机份额",
+                "客户财务杠杆、授信、付款节点、检修窗口和项目验收风险变化",
+            ],
+        }
+    return {
+        "title": f"{customer}摘要页",
+        "subtitle": "由9大模块压缩的企业洞察摘要",
+        "one_sentence": "当前企业尚未配置专属竞品替代链路摘要，可先使用9大模块信息开展关系定位、项目入口、决策链、风险和行动建议梳理。",
+        "method_note": "建议按项目入口、客户价值、决策链、替代风险和下一步动作组织摘要。",
+        "module_takeaways": [],
+        "substitution_chain": [],
+        "judgements": [],
+        "actions": [],
+        "watchlist": [],
+    }
+
+
 def _customer_basic_info(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_basic_info(petrochem_data)
     if _is_chint_customer(customer):
         return [
             _basic_row("企业名称", "浙江正泰电器股份有限公司", "成套厂全称/上市公司主体", ["S1"]),
             _basic_row("统一社会信用代码", "91330000142944445H", "企业唯一标识", ["S1"]),
             _basic_row("成立时间", "1997-08-05", "企业经营年限", ["S1"]),
             _basic_row("注册资本", "2,148,968,976 元", "反映企业规模", ["S1"]),
-            _basic_row("企业性质", "境内民营上市公司；控股股东为正泰集团股份有限公司", "民营上市平台客户", ["S1"]),
+            _basic_row("企业性质", "境内民营上市公司；控股股东为正泰集团股份有限公司。对施耐德而言，应按“核心竞品上市平台”管理，而非普通盘厂客户", "民营上市平台/竞争对手主体", ["S1", "S20"]),
             _basic_row(
                 "股权结构",
-                "正泰集团直接持股 41.18%；浙江正泰新能源投资有限公司 8.39%；南存辉直接持股 3.45%；最终控制人为南存辉",
+                "正泰集团直接持股 41.18%；浙江正泰新能源投资有限公司 8.39%；南存辉直接持股 3.45%；最终控制人为南存辉。控制权稳定，竞争策略、渠道政策和高端行业突破很可能受集团与核心创始人体系持续牵引",
                 "主要股东及持股比例",
                 ["S1", "S2"],
             ),
-            _basic_row("法人代表", "南存辉", "企业法定代表人/董事长线索", ["S1"]),
+            _basic_row("法人代表", "南存辉；竞争研究重点不是单一采购负责人，而是其低压电器、绿色能源、全球化和品牌上攻战略对施耐德份额的影响", "企业法定代表人/董事长线索", ["S1", "S5"]),
             _basic_row("注册地址", "浙江省乐清市北白象镇正泰工业园区正泰路 1 号", "企业注册地", ["S1"]),
             _basic_row(
                 "实际经营地址",
-                "公开年报披露的注册/办公地址同为浙江省乐清市北白象镇正泰工业园区正泰路 1 号；具体生产基地和项目对接厂区需按业务核验",
+                "公开年报披露的注册/办公地址同为浙江省乐清市北白象镇正泰工业园区正泰路 1 号；竞争研究需把乐清总部、国内制造基地、海外制造基地、区域销售组织和行业项目团队拆开建档",
                 "生产基地/办公地址",
                 ["S1", "S3", "S5", "S8"],
             ),
@@ -839,39 +1337,42 @@ def _basic_row(field_name: str, value: str, description: str, source_ids: list[s
 
 
 def _customer_certifications(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_certifications(petrochem_data)
     if _is_chint_customer(customer):
         return [
             _certification_row(
                 "低压成套设备生产资质",
-                "公开资料显示正泰具备低压电器、成套柜体及多国认证能力；具体低压成套设备生产资质、CCC/CQC和型式试验清单需按主体核验",
+                "正泰质量信用报告披露公司自第一张CCC认证证书起，已陆续获得CCC证书980余张，并有CQC自愿认证、“浙江制造”、泰尔认证等产品认证证书30余张，覆盖全部低压电器产品；这些资质构成其对施耐德低压产品的国产替代基础，需持续跟踪其低压成套开关设备/控制设备证书清单、有效期和生产地址",
                 "资质与认证",
-                ["S1", "S3"],
+                ["S12", "CNCA1", "CQC1"],
             ),
-            _certification_row("高压成套设备资质", "公开报告未直接披露正泰电器本体高压成套设备资质，需区分正泰集团/关联主体后核验", "资质与认证", []),
-            _certification_row("ISO体系认证", "年报披露轨交系列产品通过 ISO/TS 22163 铁路质量体系认证；官网质量信用资料可作为质量体系和服务体系复核入口，ISO9001/14001/45001完整证书清单仍需按主体核验", "ISO9001/14001/45001等", ["S1", "S12"]),
-            _certification_row("特种设备生产许可证", "公开资料未披露，需按具体产品和法人主体核验", "资质名称与等级", []),
-            _certification_row("电力承包施工资质", "公开资料未披露，需核验是否由关联工程主体承接", "资质名称与等级", []),
-            _certification_row("承装修试资质", "公开资料未披露，需核验承装/承修/承试资质等级及有效期", "资质名称与等级", []),
-            _certification_row("施耐德授权等级", "公开资料未披露，需施耐德渠道/授权系统核验协议厂、授权盘厂、战略合作伙伴及授权柜型", "协议厂/授权盘厂/战略合作伙伴", []),
+            _certification_row("高压成套设备资质", "公开资料未直接披露浙江正泰电器股份有限公司本体高压成套设备资质；但正泰集团/正泰电气等关联主体可能覆盖输配电设备。竞争研究需区分低压元器件、低压成套、中压/高压设备，判断施耐德在中压和高端成套上的防守边界", "资质与认证", ["CQC1", "S5"]),
+            _certification_row("ISO体系认证", "巨潮披露的正泰电器2024年年报列明ISO9001:2015、ISO10012:2003、QC080000:2017、ISO14001:2015、ISO45001:2018等体系认证；体系认证增强其进入工业、数据中心、海外和央国企项目的可信度，是施耐德高端项目竞争中的基本门槛", "ISO9001/14001/45001等", ["S14", "CNCA1"]),
+            _certification_row("特种设备生产许可证", "公开资料未披露；竞争判断上应关注其储能、光伏、综合能源项目中是否通过关联主体补齐施工、运维和特种设备资质", "资质名称与等级", []),
+            _certification_row("电力承包施工资质", "未检索到浙江正泰电器股份有限公司本体电力工程施工总承包资质；若项目由正泰关联工程主体承接，需另按主体查询住建资质，以判断其是否能从元件竞争延伸到EPC/运维场景", "资质名称与等级", []),
+            _certification_row("承装修试资质", "未检索到浙江正泰电器股份有限公司本体承装/承修/承试许可；需用国家能源局资质系统复核正泰关联工程主体资质，判断其是否具备抢占客户侧配电运维和改造项目的能力", "资质名称与等级", ["NEA1"]),
+            _certification_row("施耐德授权等级", "竞争视角下不应默认其为施耐德授权盘厂；若历史存在授权/采购，应严格拆分为“合作主体”和“竞争主体”，并明确哪些柜型、哪些项目禁止被正泰自有品牌替代", "协议厂/授权盘厂/战略合作伙伴", []),
         ]
     if _is_zhonghuan_customer(customer):
         return [
-            _certification_row("低压成套设备生产资质", "经营范围和公开项目线索覆盖开关柜、配电箱等；低压成套CCC/CQC、型式试验和生产资质清单待核验", "资质与认证", ["ZH1", "ZH2"]),
-            _certification_row("高压成套设备资质", "威海高压开关柜项目显示其具备高压柜项目供货/投标线索；具体高压成套资质和型式试验报告待核验", "资质与认证", ["ZH3"]),
-            _certification_row("ISO体系认证", "公开资料未直接披露ISO9001/14001/45001证书；江苏省中小企业公共服务平台披露其质量管理和荣誉资质线索，可先作为管理能力侧影，但不能替代ISO证书", "ISO9001/14001/45001等", ["ZH6", "ZH14"]),
+            _certification_row("低压成套设备生产资质", "经营范围和公开项目线索覆盖开关柜、配电箱等；本轮未检索到江苏中环电气集团有限公司低压成套CCC/CQC证书编号，需到CNCA/CQC按获证组织名称核验低压成套开关设备、空壳体、母线槽/桥架等证书清单", "资质与认证", ["ZH1", "ZH2", "CNCA1", "CQC1"]),
+            _certification_row("高压成套设备资质", "威海高压开关柜项目显示其具备高压柜项目供货/投标线索；未在公开搜索结果中定位到有效高压成套CQC证书或型式试验报告编号，需客户提供或到CQC/检测机构平台复核", "资质与认证", ["ZH3", "CQC1"]),
+            _certification_row("ISO体系认证", "公开资料未直接披露ISO9001/14001/45001证书；江苏省中小企业公共服务平台披露质量管理荣誉，高新技术企业官方名单可确认高企资质，但不能替代ISO体系证书，需在CNCA按企业名称核验当前有效证书", "ISO9001/14001/45001等", ["ZH10", "ZH14", "CNCA1"]),
             _certification_row("特种设备生产许可证", "公开资料未披露，需客户提供或通过监管/资质平台核验", "资质名称与等级", []),
             _certification_row("电力承包施工资质", "公开资料显示其业务含电气工程安装、建设工程施工等线索；具体电力承包施工资质等级待核验", "资质名称与等级", ["ZH2"]),
-            _certification_row("承装修试资质", "公开资料未披露承装/承修/承试资质等级，需客户访谈或资质平台核验", "资质名称与等级", []),
+            _certification_row("承装修试资质", "未检索到江苏中环电气集团有限公司承装/承修/承试等级；国家能源局资质和信用信息系统提供承装修试许可证查询入口，需按企业名称复核是否持证、许可类别和等级", "资质名称与等级", ["NEA1"]),
             _certification_row("施耐德授权等级", "公开资料未披露，需施耐德内部核验是否为协议厂/授权盘厂及授权柜型", "协议厂/授权盘厂/战略合作伙伴", []),
         ]
     if _is_tianyu_customer(customer):
         return [
-            _certification_row("低压成套设备生产资质", "引江济淮项目公示显示低压开关柜部分提供强制性认证产品符合性自我声明；完整低压成套证书清单需核验", "资质与认证", ["TY4"]),
-            _certification_row("高压成套设备资质", "引江济淮项目公示显示35kV、10kV开关柜所投产品具备有效型式试验报告", "资质与认证", ["TY4"]),
-            _certification_row("ISO体系认证", "公开资料未披露ISO9001/14001/45001完整证书；ESG报告、国资集团资料和校园招聘资料可作为治理与管理体系侧影，证书清单及有效期仍需客户提供", "ISO9001/14001/45001等", ["TY11", "TY15"]),
+            _certification_row("低压成套设备生产资质", "引江济淮项目公示显示低压开关柜部分提供强制性认证产品符合性自我声明；CQC输配电认证覆盖低压成套设备及配件、低压成套开关设备，完整证书清单和有效期需在CNCA/CQC继续核验", "资质与认证", ["TY4", "CNCA1", "CQC1"]),
+            _certification_row("高压成套设备资质", "引江济淮项目公示显示35kV、10kV开关柜所投产品具备有效型式试验报告；CQC输配电认证覆盖高压设备及电器、高压成套开关设备，建议进一步核验证书编号、试验报告编号和适用型号", "资质与认证", ["TY4", "CQC1"]),
+            _certification_row("ISO体系认证", "中国传动网历史资料显示天宇电气按ISO9001:2000建立质量体系并通过中国机械工业质量体系认证中心（现中联认证中心）审核；当前ISO9001/14001/45001有效证书编号、覆盖范围和有效期仍需在CNCA或客户证书清单复核", "ISO9001/14001/45001等", ["TY9", "CNCA1"]),
             _certification_row("特种设备生产许可证", "公开资料未披露，需按变压器、GIS、开关柜等具体产品和监管要求核验", "资质名称与等级", []),
             _certification_row("电力承包施工资质", "经营范围许可项含建设工程施工等，具体电力承包施工资质等级待核验", "资质名称与等级", ["TY3"]),
-            _certification_row("承装修试资质", "经营范围许可项含输电、供电、受电电力设施安装维修试验；具体承装/承修/承试等级待核验", "资质名称与等级", ["TY3"]),
+            _certification_row("承装修试资质", "经营范围许可项含输电、供电、受电电力设施安装维修试验；国家能源局资质和信用信息系统提供承装修试许可证公开查询入口，需进一步核验是否持证、许可类别、等级和有效期", "资质名称与等级", ["TY3", "NEA1"]),
             _certification_row("施耐德授权等级", "公开资料未披露，需施耐德内部核验授权盘厂/协议厂身份、授权柜型、有效期和年度指标", "协议厂/授权盘厂/战略合作伙伴", []),
         ]
     return [
@@ -895,22 +1396,25 @@ def _certification_row(field_name: str, value: str, description: str, source_ids
 
 
 def _customer_scale_finance(customer: str) -> dict[str, list[dict[str, Any]]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_scale_finance(petrochem_data)
     if _is_chint_customer(customer):
         return {
             "enterprise_scale": [
-                _metric_row("员工总数", "30,214 人", "在职员工数量", ["S1"]),
-                _metric_row("技术人员数量", "技术人员 4,692 人；研发人员 2,679 人", "设计、研发、技术支持人员", ["S1"]),
-                _metric_row("生产人员数量", "17,793 人", "生产一线员工", ["S1"]),
-                _metric_row("销售人员数量", "3,891 人", "销售团队规模", ["S1"]),
-                _metric_row("厂房面积", "公开资料未披露具体厂房面积，需按正泰电器及关联生产主体核验", "生产场地面积（㎡）", []),
-                _metric_row("生产基地数量", "公开资料显示拥有 20+ 个海外制造基地，集团层面国内外制造基地较多；具体正泰电器成套相关基地需拆分核验", "有几个生产基地", ["S3", "S5"]),
-                _metric_row("年产能", "2025年配电电器产量 8,295.41 万台、终端电器 39,408.26 万台、控制电器 21,474.34 万台；成套柜体产能需另核验", "年产高低压柜体数量/产值", ["S1"]),
+                _metric_row("员工总数", "30,214 人；规模足以支撑全国渠道、制造和项目交付，是施耐德在中国低压市场必须长期对标的本土组织能力", "在职员工数量", ["S1"]),
+                _metric_row("技术人员数量", "技术人员 4,692 人、研发人员 2,679 人；说明其不是低端代工型对手，而是具备产品迭代、认证、行业应用和数字化平台投入的研发型竞品", "设计、研发、技术支持人员", ["S1", "S20"]),
+                _metric_row("生产人员数量", "17,793 人；大规模生产团队叠加智能制造投入，构成其低成本、快速供货和国产替代的制造基础", "生产一线员工", ["S1", "S3"]),
+                _metric_row("销售人员数量", "3,891 人；再叠加分销网络与行业团队，竞争关键不只是产品，而是渠道触达和终端客户覆盖", "销售团队规模", ["S1", "S4"]),
+                _metric_row("厂房面积", "公开资料未披露具体厂房面积；竞争研究需按乐清基地、国内制造基地、海外制造基地和关联成套主体拆分产能，不宜只看上市公司地址", "生产场地面积（㎡）", []),
+                _metric_row("生产基地数量", "公开资料显示拥有20+个海外制造基地，集团层面国内外制造基地较多；这是其对施耐德海外项目和本地化交付构成威胁的重要变量", "有几个生产基地", ["S3", "S5"]),
+                _metric_row("年产能", "2025年配电电器产量8,295.41万台、终端电器39,408.26万台、控制电器21,474.34万台；产能规模强化其常规低压元器件价格战和快速交付能力，成套柜体产能需按关联主体另核验", "年产高低压柜体数量/产值", ["S1"]),
             ],
             "financial_status": [
-                _metric_row("年营业收入", "2025 年 591.45 亿元；2024 年 645.19 亿元", "最近三年营业收入", ["S1"]),
-                _metric_row("净利润", "2025 年归母净利润 45.01 亿元；2024 年 38.74 亿元", "最近三年净利润", ["S1"]),
-                _metric_row("资产负债率", "2025 年约 66.13%；2024 年约 63.28%", "财务健康度指标", ["S1"]),
-                _metric_row("现金流状况", "2025 年经营性现金流 230.90 亿元；2024 年 152.02 亿元，现金流改善明显", "经营性现金流是否健康", ["S1"]),
+                _metric_row("年营业收入", "2025年591.45亿元、2024年645.19亿元；虽然收入下滑，但体量远高于一般盘厂，应作为施耐德中国低压与新能源相关业务的战略级竞品池管理", "最近三年营业收入", ["S1"]),
+                _metric_row("净利润", "2025年归母净利润45.01亿元、2024年38.74亿元；利润韧性支持其持续价格竞争、渠道补贴、研发投入和海外扩张", "最近三年净利润", ["S1"]),
+                _metric_row("资产负债率", "2025年约66.13%、2024年约63.28%；负债率上行主要提示光伏和能源资产周期风险，但短期不削弱其低压竞争能力", "财务健康度指标", ["S1"]),
+                _metric_row("现金流状况", "2025年经营性现金流230.90亿元、2024年152.02亿元，现金流改善明显；这意味着其具备较强渠道、库存和项目垫资能力，施耐德防守时需关注账期/价格组合竞争", "经营性现金流是否健康", ["S1"]),
             ],
         }
     if _is_zhonghuan_customer(customer):
@@ -978,45 +1482,48 @@ def _metric_row(field_name: str, value: str, description: str, source_ids: list[
 
 
 def _customer_business_capability(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_business_capability(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "主营业务",
                 "rows": [
-                    _business_row("主营产品类型", "低压电器、光伏电站开发运营、EPC、户用光伏、逆变器与储能；低压分产品包括终端电器、配电电器、控制电器、仪器仪表、建筑电器", "高压柜/低压柜/箱变/配电箱等", ["S1"]),
-                    _business_row("产品线覆盖", "智慧电器与绿色能源两大主线，覆盖低压电器、智能配电、新能源、储能、微电网、能源运维等", "全产品线", ["S1", "S3"]),
-                    _business_row("主营行业领域", "电力、新能源、数据中心、轨交、锂电、充电桩、半导体、储能及海外市场", "建筑/工业/电力/新能源等", ["S1", "S3"]),
-                    _business_row("业务收入结构", "2025 年低压电器 219.19 亿元、光伏业务 362.74 亿元、逆变器及储能 23.90 亿元；地区收入包含华东 235.69 亿元、华中 107.65 亿元、海外 99.51 亿元等", "各业务板块收入占比", ["S1"]),
+                    _business_row("主营产品类型", "正泰在配电电器、终端电器、电动机控制与保护、电源电器、电气材料等低压/配电元器件上与施耐德直接重叠；其数据中心方案进一步覆盖塑壳/框架断路器、低压成套柜、中压配电系统及750kV及以下输配电产品，是施耐德低压配电和成套方案的正面竞品", "高压柜/低压柜/箱变/配电箱等", ["S15", "S16", "SE3", "S20"]),
+                    _business_row("产品线覆盖", "正泰已形成“元器件+成套+行业解决方案+能源运营”的竞品链条：低压元器件、终端配电、低压成套柜、中压配电、智能配电监控、建筑/数据中心、电网、储能和工商业分布式储能；施耐德需用EcoStruxure、数据中心、可靠性和全球服务做差异化", "全产品线", ["S15", "S16", "S17", "S18", "SE1", "SE2"]),
+                    _business_row("主营行业领域", "正泰官方方案与年报覆盖建筑、电网、数据中心/通信、储能、新能源、工商业、轨交、锂电、半导体和海外市场；这些也是施耐德中国低压、智能配电、数据中心和能源管理的重点战场", "建筑/工业/电力/新能源等", ["S1", "S16", "S17", "S18", "SE2"]),
+                    _business_row("业务收入结构", "年报披露低压电器219.19亿元、光伏业务362.74亿元、逆变器及储能23.90亿元；低压业务是与施耐德直接竞争的核心盘，光伏/储能/综合能源会带来新增配电与能效场景竞争。地区收入中华东235.69亿元、华中107.65亿元、海外99.51亿元，说明其国内优势区和海外扩张都需要施耐德防守", "各业务板块收入占比", ["S1", "S7", "S20"]),
                 ],
             },
             {
                 "category": "技术能力",
                 "rows": [
-                    _business_row("设计团队规模", "年报披露研发人员 2,679 人、技术人员 4,692 人；电气设计人员口径需客户访谈拆分", "电气设计人员数量", ["S1"]),
-                    _business_row("设计软件使用", "公开资料未披露 EPLAN/CAD/三维设计使用情况，需通过技术访谈确认", "EPLAN/CAD/三维设计等", []),
-                    _business_row("研发投入占比", "2025 年研发费用 13.26 亿元，占营业收入约 2.24%", "研发费用/营业收入", ["S1"]),
-                    _business_row("专利数量", "公开报告显示持续进行专利与产品创新布局，但本项目尚未摘录有效专利数量，需以年报附注、知识产权平台或企查查补充", "发明专利/实用新型/外观设计", []),
-                    _business_row("技术合作方", "公开资料未披露具体设计院或高校合作方，建议在客户访谈中核验联合研发、设计院入围和项目标准图纸来源", "与哪些设计院/高校合作", []),
+                    _business_row("设计团队规模", "年报披露研发人员2,679人、技术人员4,692人；竞争视角下应重点识别其低压新品、行业方案、数据中心、储能和海外认证团队，而非只问电气设计人数", "电气设计人员数量", ["S1", "S20"]),
+                    _business_row("设计软件使用", "公开资料未披露EPLAN/CAD/三维设计使用情况；需要从施耐德丢单项目、设计院图纸和正泰标准BOM反推其设计工具链和数字化选型能力", "EPLAN/CAD/三维设计等", []),
+                    _business_row("研发投入占比", "2025年研发费用13.26亿元，占营业收入约2.24%；其研发投入和昆仑/诺雅克等产品上攻，是冲击施耐德中高端份额的核心变量", "研发费用/营业收入", ["S1", "S20"]),
+                    _business_row("专利数量", "公开报告显示持续进行专利与产品创新布局；竞争情报需补齐低压断路器、智能配电、储能、数据中心、通信协议和海外认证相关专利/新品节奏", "发明专利/实用新型/外观设计", ["S1"]),
+                    _business_row("技术合作方", "公开资料未披露具体设计院或高校合作方；需从大型项目、行业白皮书、设计院品牌库和终端业主规范中识别其技术生态，判断其是否进入施耐德传统优势规范", "与哪些设计院/高校合作", ["S19"]),
                 ],
             },
             {
                 "category": "生产能力",
                 "rows": [
-                    _business_row("生产设备水平", "累计投入超过 23 亿元推进智能制造，建成多类数字化产线，并具备检测、校准和在线质控能力", "自动化程度/设备先进性", ["S3"]),
-                    _business_row("质量控制体系", "具备质量检测中心、数字化质控点、质量信用和全流程质量管理线索；官网质量信用资料还披露客服热线、官网、微信公众号、小程序等服务闭环，适合进一步核验成套柜体检测设备与出厂试验流程", "检测设备、质检流程", ["S3", "S12"]),
-                    _business_row("生产周期", "公开资料未披露从下单到交付的平均周期，需按低压柜、配电箱、箱变等品类访谈核验", "从下单到交付的平均周期", []),
-                    _business_row("准时交付率", "公开资料未披露历史订单准时交付比例，需施耐德订单履约数据和客户生产计划访谈补齐", "历史订单准时交付比例", []),
-                    _business_row("质量合格率", "公开资料未披露产品一次合格率，需客户质量记录、施耐德售后/投诉记录或现场审核补齐", "产品一次合格率", []),
+                    _business_row("生产设备水平", "累计投入超过23亿元推进智能制造，建成多类数字化产线，并具备检测、校准和在线质控能力；这意味着其常规低压产品在成本、交期和一致性上具备对施耐德的规模化压力", "自动化程度/设备先进性", ["S3"]),
+                    _business_row("质量控制体系", "具备质量检测中心、数字化质控点、质量信用和全流程质量管理线索；质量短板不宜再简单假设为正泰弱点，施耐德需证明在高可靠、关键负载、国际认证和生命周期服务上的差异", "检测设备、质检流程", ["S3", "S12", "SE1"]),
+                    _business_row("生产周期", "公开资料未披露从下单到交付的平均周期；竞争研究需通过赢丢单复盘比较正泰与施耐德在常规低压、成套柜、数据中心和新能源项目中的交期差异", "从下单到交付的平均周期", []),
+                    _business_row("准时交付率", "公开资料未披露历史准时交付比例；需用施耐德丢单/替代项目验证正泰是否以交期和本地化库存形成优势", "历史订单准时交付比例", []),
+                    _business_row("质量合格率", "公开资料未披露一次合格率；应关注终端客户是否仍在关键负载、海外认证、数据中心和储能安全上偏好施耐德", "产品一次合格率", []),
                 ],
             },
             {
                 "category": "项目经验",
                 "rows": [
-                    _business_row("代表性项目", "华为上板开关、牧原智能单元箱、远景风电专供、库柏 UL 数据中心专供、UL 储能机型等线索", "历史标杆项目案例", ["S1"]),
-                    _business_row("项目类型分布", "电网、新能源、数据中心、轨交、锂电池、充电桩、半导体、储能和海外项目等", "建筑/工业/市政/电力等占比", ["S1"]),
-                    _business_row("项目地域分布", "公开资料显示服务全球 140+ 国家和地区，并覆盖欧洲、亚太、西亚非、拉美、北美等海外区域", "业务覆盖省份/城市", ["S1", "S3"]),
-                    _business_row("大型项目经验", "具备北美数据中心、海外能源与新能源项目经验；500 万以上成套项目清单需从施耐德内部商机和客户项目清单核验", "500万+项目经验", ["S1"]),
-                    _business_row("行业标杆客户", "汇川储能、青山控股、珠海泰坦、华为、牧原、远景、库柏等公开线索", "服务过的知名客户", ["S1"]),
+                    _business_row("代表性项目", "正泰官网客户成功案例库可核验 183 个案例，已披露的标杆包括：华为战略合作（5G高密嵌入式开关电源、UPS柜、汇流箱、数据中心锂电柜、精密空调柜、箱变等场景）、远景能源风电主控柜系统解决方案、牧原动环监控系统、中石油长庆油田采油采气项目、中国中铁隧道集团全国集采配电箱项目、福建电力分布式光伏群调群控试点、山东电力低压分布式光伏并网方案等。对施耐德而言，这些案例说明正泰已在通信/数据中心、新能源、电网、油气、轨交/OEM等重点战场形成可展示的客户证据链", "历史标杆项目案例", ["S21", "S22", "S23", "S24", "S25", "S26", "S27", "S28"]),
+                    _business_row("项目类型分布", "官网案例库按行业披露：新能源18个、5G&通信24个、电网16个、工业27个、OEM48个、建筑39个、轨交9个、基础设施2个。类型分布与施耐德低压配电、智能配电、数据中心、工业OEM和新能源储能的重点行业高度重叠，应作为正泰竞品项目雷达的首要行业标签", "建筑/工业/市政/电力等占比", ["S21"]),
+                    _business_row("项目地域分布", "官网案例覆盖全国集采、电网省级试点、山东/福建/河北/湖南/北京/雄安等区域项目，以及华为、远景、牧原、维谛、中石油长庆油田、中国中铁等全国性或行业龙头客户；结合公司服务全球140+国家和地区，正泰项目地域已从华东基本盘扩展到全国行业项目与海外场景", "业务覆盖省份/城市", ["S3", "S21", "S22", "S23", "S24", "S25", "S26", "S27", "S29"]),
+                    _business_row("大型项目经验", "官网案例未逐项披露合同金额，无法直接确认500万+金额口径；但中国中铁隧道集团全国集采配电箱、中石油长庆油田采油采气、华为战略合作、维谛合作、远景风电主控柜、福建/山东电力分布式光伏等案例具备行业级/集团级项目属性。施耐德应将这些案例纳入大项目竞品库，再用中标公告、内部丢单记录和客户访谈补齐金额、份额和正泰胜出原因", "500万+项目经验", ["S22", "S23", "S25", "S26", "S27", "S28", "S29"]),
+                    _business_row("行业标杆客户", "官网可核验的标杆客户包括华为、维谛、远景能源、牧原集团、中石油长庆油田、中国中铁隧道集团，以及国网/南网相关试点和山东、福建、河北、湖南等电网项目。应逐一判断其是施耐德共同客户、正泰替代客户还是潜在争夺客户，并补充设计院/业主品牌库位置", "服务过的知名客户", ["S21", "S22", "S23", "S24", "S25", "S26", "S27", "S28", "S29"]),
                 ],
             },
         ]
@@ -1025,10 +1532,10 @@ def _customer_business_capability(customer: str) -> list[dict[str, Any]]:
             {
                 "category": "主营业务",
                 "rows": [
-                    _business_row("主营产品类型", "开关柜、桥架、母线槽、配电箱、支吊架、接地装置、仪器仪表管阀件等输配电和电气配套产品", "高压柜/低压柜/箱变/配电箱等", ["ZH1", "ZH2", "ZH9"]),
-                    _business_row("产品线覆盖", "高低压成套/配电箱、母线槽/桥架、电气工程安装与建筑智能化业务线索较明确；招聘介绍补充接地装置、仪表管阀件等产品线", "全产品线", ["ZH1", "ZH2", "ZH9"]),
-                    _business_row("主营行业领域", "公共建筑、居民小区供配电改造、化工/石化/环保、轨交/中车、电建/核电供应商准入等", "建筑/工业/电力/新能源等", ["ZH3", "ZH4", "ZH5"]),
-                    _business_row("业务收入结构", "非上市公司公开资料未披露各业务板块收入占比，现阶段只能用公开项目金额和品类分布作规模侧影", "各业务板块收入占比", ["ZH3"]),
+                    _business_row("主营产品类型", "未检索到可核验的企业官网；以公共资源主体信息和招聘公司介绍交叉补充，产品口径为电缆桥架、母线槽、高低压开关柜、配电箱、支吊架、接地装置、仪器仪表管阀件等输配电和电气配套产品", "高压柜/低压柜/箱变/配电箱等", ["ZH1", "ZH9"]),
+                    _business_row("产品线覆盖", "公开可确认的产品线以工程配套型输配电产品为主：高低压开关柜/配电箱、母线槽/桥架、支吊架/接地装置、仪表管阀件，并延伸到电气安装、建筑智能化等项目服务；暂未找到箱变、储能、新能源成套设备的企业官网证据", "全产品线", ["ZH1", "ZH2", "ZH9"]),
+                    _business_row("主营行业领域", "官方公共资源和央企/项目平台线索显示其参与供热、水利、居民小区供配电改造、化工/环保、轨交/中车、电建/核电供应商等场景，行业侧重点为建筑/市政、电力配套、工业项目和轨交能源配套", "建筑/工业/电力/新能源等", ["ZH3", "ZH4", "ZH5", "ZH11", "ZH12"]),
+                    _business_row("业务收入结构", "非上市公司未披露各业务板块收入占比，且未检索到可核验官网财务口径；现阶段只能用中标/候选项目品类与金额、供应商准入和公开项目类型来判断业务重心，仍需客户访谈或财务资料补齐", "各业务板块收入占比", ["ZH2", "ZH3", "ZH11", "ZH12"]),
                 ],
             },
             {
@@ -1067,10 +1574,10 @@ def _customer_business_capability(customer: str) -> list[dict[str, Any]]:
             {
                 "category": "主营业务",
                 "rows": [
-                    _business_row("主营产品类型", "高低压开关柜、互感器、箱变、环氧树脂浇注绝缘件、变压器及配套设备，并延伸到储能技术服务、充电桩销售等；高校就业资料补充35kV及以下高低压开关柜和10kV及以下组合式变压器口径", "高压柜/低压柜/箱变/配电箱等", ["TY3", "TY6", "TY12", "TY15"]),
-                    _business_row("产品线覆盖", "覆盖主变/箱变、高低压柜、开关成套设备、变压器/GIS 候选品类，以及储能、充电桩和工程服务线索；“榕牌”变压器、“福开”牌开关成套设备是历史品牌资产", "全产品线", ["TY1", "TY3", "TY5", "TY6", "TY15"]),
-                    _business_row("主营行业领域", "水利、新能源、煤化工、钢铁、锂电前驱体、渔光互补、增量配电网、110kV 变电站、海外项目等", "建筑/工业/电力/新能源等", ["TY4", "TY5", "TY6"]),
-                    _business_row("业务收入结构", "集团报道显示主变、箱变两大产品收入突破 10 亿元；2025 年营业收入近 23 亿元、新签合同额 30 多亿元，详细板块占比未披露", "各业务板块收入占比", ["TY1"]),
+                    _business_row("主营产品类型", "中国电气装备集团官方报道和许继体系资料显示，天宇电气以主变、箱变、高低压开关柜/开关成套设备为核心，包含互感器、环氧树脂浇注绝缘件、组合式变压器等；高校就业资料补充35kV及以下高低压开关柜和10kV及以下组合式变压器口径", "高压柜/低压柜/箱变/配电箱等", ["TY1", "TY2", "TY15"]),
+                    _business_row("产品线覆盖", "覆盖主变、箱变、高低压开关柜、低压柜、互感器、绝缘件、组合式变压器，并通过许继/中国电气装备体系延伸到新能源箱变、海上风电塔筒环网柜、变压器/GIS候选品类及智能制造服务场景", "全产品线", ["TY1", "TY2", "TY4", "TY5", "TY16"]),
+                    _business_row("主营行业领域", "官方与项目线索覆盖电网/配电网、水利工程、海上风电和新能源、数据中心/变压器应用、110kV变电站、煤化工、钢铁、锂电前驱体、渔光互补、增量配电网及海外项目等", "建筑/工业/电力/新能源等", ["TY1", "TY4", "TY5", "TY16"]),
+                    _business_row("业务收入结构", "中国电气装备集团官方报道披露主变、箱变两大产品收入突破10亿元，并披露2025年营业收入近23亿元、新签合同额30多亿元；但未披露高低压柜、变压器、箱变等板块占比，需财务口径或客户访谈补齐", "各业务板块收入占比", ["TY1"]),
                 ],
             },
             {
@@ -1157,36 +1664,27 @@ def _business_row(field_name: str, value: str, description: str, source_ids: lis
 
 
 def _customer_supply_procurement(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_supply_procurement(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
-                "category": "施耐德合作情况",
-                "rows": [
-                    _supply_row("合作年限", "公开资料未披露正泰电器与施耐德合作年限；需从施耐德 CRM/ERP、渠道/授权系统和客户经理访谈补齐", "与施耐德合作多少年", []),
-                    _supply_row("合作模式", "公开资料未披露协议厂/授权盘厂/普通客户身份；需拆分正泰电器、正泰电气、正泰电源、正泰安能、正泰智能电气等关联主体后核验", "协议厂/授权盘厂/普通客户", []),
-                    _supply_row("历史采购额", "公开资料未披露近三年施耐德产品采购额；建议按关联主体、项目、SKU、毛利、账期、逾期拉通 CRM/ERP 数据", "近三年施耐德产品采购额", []),
-                    _supply_row("采购增长率", "公开资料未披露采购额同比；需以近三年施耐德历史采购数据计算，并拆分常规采购、项目采购、海外项目采购", "采购额同比增长率", []),
-                    _supply_row("主要采购产品", "公开资料未披露实际采购品类；潜在切入应聚焦高端断路器、智能配电、海外认证、客户指定品牌、数据中心和关键电源场景", "断路器/接触器/变频器/软启等", ["S1"]),
-                    _supply_row("授权柜体型号", "公开资料未披露 BlokSeT/Okken/MVnex 等授权柜体型号；需渠道/授权系统核验授权范围、有效期和关联主体", "BlokSeT/Okken/MVnex等", []),
-                    _supply_row("合作满意度", "公开资料未披露对施耐德服务、技术支持满意度；需销售复盘、客户投诉、现场服务和售后争议记录补齐", "对施耐德服务、技术支持的满意度", []),
-                ],
-            },
-            {
                 "category": "竞品采购情况",
                 "rows": [
-                    _supply_row("主要竞品品牌", "正泰自身即低压电器头部品牌，常规低压元件首先面对正泰自有品牌替代；高端项目再与 ABB、西门子、伊顿等国际品牌竞争", "西门子/ABB/正泰/德力西等", ["S1"]),
-                    _supply_row("竞品采购比例", "公开资料未披露竞品采购比例；需通过施耐德赢丢单、项目 BOM 和客户采购台账计算", "竞品采购额占总采购比例", []),
-                    _supply_row("竞品使用原因", "常规低压元件可能因自有品牌、成本和供应链协同胜出；国际品牌可能因业主指定、认证、数据中心/海外规范胜出", "价格/技术/服务/关系等", ["S1"]),
-                    _supply_row("竞品优势感知", "正泰自有品牌优势在价格、规模化供应、渠道和集团协同；国际品牌优势在高端认证、可靠性、海外服务和业主认可", "认为竞品哪些方面更有优势", ["S1", "S3"]),
-                    _supply_row("竞品劣势感知", "自有品牌在国际认证、高端业主背书和全球服务网络上可能弱于施耐德等国际品牌；具体需赢丢单复盘确认", "认为竞品哪些方面不足", ["S1"]),
+                    _supply_row("主要竞品品牌", "从正泰视角看，竞品应按“高端外资+国产强势品牌+盘柜生态”三层拆分：施耐德是低压全市场最核心对手，2024年中国低压电器市场约862亿元，施耐德销售137.2亿元/15.9%，正泰133.4亿元/15.5%，差距仅0.4个百分点；ABB、西门子、伊顿在ACB、关键负载、工业项目和国际客户规范中构成高端竞品；德力西、良信、常熟开关、天正等在渠道、价格、局部高端产品和新能源/OEM场景中与正泰争夺份额；大型盘柜厂/成套厂会影响终端品牌进入BOM和项目规范", "西门子/ABB/正泰/德力西等", ["S30", "S31", "S34"]),
+                    _supply_row("竞品采购比例", "公开资料不披露“正泰客户采购竞品比例”，应改为正泰视角的“客户流失/竞品替代率”：以正泰目标行业客户在施耐德、ABB、西门子、德力西、良信、常熟开关等品牌上的项目BOM金额、台套、关键品类和品牌库位置来测算。外部市场份额可作基线：施耐德与正泰整体份额已接近，但正泰在工业OEM、建筑、个人用户三大细分市场位列第一；真正需要补齐的是高端ACB、工业项目、基础设施、数据中心、轨交、油气化工等场景的竞品占比", "竞品采购额占总采购比例", ["S1", "S30", "S31", "S34"]),
+                    _supply_row("竞品使用原因", "站在正泰侧，客户选择竞品通常来自四类原因：一是国际业主/设计院/总包在高端项目中指定施耐德、ABB、西门子等品牌；二是ACB、关键负载、电子半导体、汽车、钢铁冶金、石油油气、化工、数据中心、轨交、机场港口等场景更重视外资品牌背书、可靠性和全生命周期服务；三是终端配电渠道受价格、库存、促销和现货交付影响，德力西、良信、常熟开关等国产竞品可用价格/交期争夺订单；四是盘柜厂渠道通过BOM、柜型和设计院规范把品牌选择转化为项目结果", "价格/技术/服务/关系等", ["S31", "S32", "S33", "S34"]),
+                    _supply_row("竞品优势感知", "正泰视角下，施耐德/ABB/西门子的优势是高端品牌心智、ACB和关键负载可靠性、国际客户规范、数据中心/轨交/机场港口等基础设施经验、EcoStruxure式数字化平台和全球服务网络；德力西、良信、常熟开关等国产竞品优势是区域渠道、价格弹性、响应速度和部分细分产品能力。正泰自己的优势则在建筑/个人用户/分销渠道、工业OEM基础盘、低压产品线完整性、10万+销售网络、价格与交付弹性，以及新能源、通信、数据中心和电网案例持续积累", "认为竞品哪些方面更有优势", ["S3", "S4", "S19", "S21", "S30", "S31", "SE1", "SE2"]),
+                    _supply_row("竞品劣势感知", "从正泰视角看，外资竞品的劣势通常是价格高、交期/本地库存弹性弱、渠道下沉不足、部分常规低压场景性价比不占优；国产竞品的劣势是规模、品牌、产品线完整性和高端项目背书弱于正泰。正泰自身仍需警惕的短板是高端ACB、国际业主规范、复杂数字化平台、关键负载全生命周期服务、海外多国认证和高端工业项目证据仍需持续补强", "认为竞品哪些方面不足", ["S3", "S19", "S31", "S32", "S34", "SE2"]),
                 ],
             },
             {
                 "category": "其他供应商",
                 "rows": [
-                    _supply_row("其他器件供应商", "低压业务原材料成本占 86.63%，配电/控制电器等原材料占比约 90%；采购重点可能包括铜、银、钢材、塑料、电子元器件、光伏/储能系统部件", "其他核心供应商", ["S1"]),
-                    _supply_row("柜体供应商", "正泰具备自有低压电器、成套柜体和系统化能力；成套柜体自产/外购比例需按正泰电气等关联主体核验", "是否自产柜体或外购", ["S1", "S3"]),
-                    _supply_row("供应链稳定性", "2025 年前五名供应商采购额 80.59 亿元，占采购总额 14.93%；关联方采购 44.86 亿元，占 8.31%，供应商集中度不极端但集团协同明显", "是否有稳定供货渠道", ["S1"]),
+                    _supply_row("其他器件供应商", "低压业务原材料成本占86.63%，配电/控制电器等原材料占比约90%；其核心供应链更像制造型竞品供应链，关注铜、银、钢材、塑料、电子元器件、光伏/储能系统部件，而非普通盘厂外购低压元件", "其他核心供应商", ["S1"]),
+                    _supply_row("柜体供应商", "正泰具备自有低压电器、成套柜体和系统化能力；需核验正泰电气等关联主体柜体能力，因为其可能用“元件+柜体+方案”整体替代施耐德授权盘厂方案", "是否自产柜体或外购", ["S1", "S3"]),
+                    _supply_row("供应链稳定性", "2025年前五名供应商采购额80.59亿元，占采购总额14.93%；关联方采购44.86亿元，占8.31%。供应商集中度不极端，集团协同明显，支持其在价格和交期上对施耐德形成持续压力", "是否有稳定供货渠道", ["S1"]),
                 ],
             },
         ]
@@ -1300,24 +1798,27 @@ def _supply_row(field_name: str, value: str, description: str, source_ids: list[
 
 
 def _customer_resources(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_resources(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "客户结构",
                 "rows": [
-                    _resource_row("主要客户类型", "终端业主、总包/集成商、设计院规范影响方、行业大客户、经销商/分销商、海外本土渠道和项目客户并存", "终端业主/总包/设计院/经销商", ["S1", "S4"]),
-                    _resource_row("客户行业分布", "电力、电网、新能源、数据中心、通信、建筑楼宇、轨道交通、工业 OEM、锂电池、充电桩、半导体、储能、海外电力与基建等", "建筑/工业/电力/新能源/交通等", ["S1"]),
-                    _resource_row("客户地域分布", "服务全球 140+ 国家和地区；国内重点收入区域包括华东、华中、华北、华南等，海外覆盖欧洲、亚太、西亚非、拉美、北美", "主要服务区域", ["S1", "S3"]),
-                    _resource_row("头部客户名单", "年报未披露前十大客户名称；公开项目/行业线索可识别汇川储能、青山控股、珠海泰坦、华为、牧原、远景、库柏等重点客户或应用场景", "前10大客户名称及行业", ["S1"]),
-                    _resource_row("头部客户收入占比", "2025 年前五名客户销售额 228.51 亿元，占年度销售总额 38.64%；其中关联方销售额 27.80 亿元，占 4.70%；不存在单个客户销售比例超过 50% 的情形", "前10大客户收入贡献", ["S1"]),
+                    _resource_row("主要客户类型", "正泰客户类型与施耐德重点客户高度重叠：终端业主、总包/集成商、设计院规范影响方、行业大客户、经销商/分销商、海外本土渠道和项目客户并存。需建立“共同客户/被替代客户/正泰优势客户”三类清单", "终端业主/总包/设计院/经销商", ["S1", "S4", "SE1"]),
+                    _resource_row("客户行业分布", "电力、电网、新能源、数据中心、通信、建筑楼宇、轨道交通、工业OEM、锂电池、充电桩、半导体、储能、海外电力与基建等，均是施耐德关键战场；竞争研究要按行业标注正泰渗透深度", "建筑/工业/电力/新能源/交通等", ["S1", "SE2"]),
+                    _resource_row("客户地域分布", "服务全球140+国家和地区；国内重点收入区域包括华东、华中、华北、华南等，海外覆盖欧洲、亚太、西亚非、拉美、北美。正泰海外本地化会削弱施耐德全球服务独占优势", "主要服务区域", ["S1", "S3", "S5"]),
+                    _resource_row("头部客户名单", "正泰年报未披露前十大客户名称，但官网客户成功案例可核验代表性客户与合作项目：华为战略合作，覆盖5G高密嵌入式开关电源、UPS柜、汇流箱、数据中心锂电柜、精密空调柜、箱变等；中国移动战略合作，应用CB系列小型断路器、NC5交流接触器、JZX-22F小型电磁继电器；维谛合作项目，面向关键数字基础设施场景供应断路器和塑壳断路器；中国铁塔成都分公司2021年户外机柜智能控制节能设备改造项目；远景能源风电主控柜系统解决方案；牧原集团动环监控系统；中石油长庆油田采油采气项目，覆盖采油控制柜、升压站、净化厂、管道输送中心等；中国中铁隧道集团全国集采配电箱项目；南网负荷管理系统方案和南网智能配电系统方案，涉及深圳供电局、南网数字集团和南网V3.0智能配电系统；福建电力分布式光伏群调群控试点、山东电力低压分布式光伏并网方案；武汉天河机场第三跑道配套机坪及设施工程低压柜项目。建议进一步映射这些客户是否为施耐德现有KA、共同客户或正泰优势客户", "前10大客户名称及行业", ["S21", "S22", "S23", "S24", "S25", "S26", "S27", "S28", "S29", "S35", "S36", "S37", "S38", "S39"]),
+                    _resource_row("头部客户收入占比", "2025年前五名客户销售额228.51亿元，占年度销售总额38.64%；其中关联方销售额27.80亿元，占4.70%；客户集中度中等，说明正泰既有大客户突破也有渠道长尾能力，施耐德不能只盯少数KA", "前10大客户收入贡献", ["S1"]),
                 ],
             },
             {
                 "category": "客户关系",
                 "rows": [
-                    _resource_row("客户粘性", "低压分销渠道包括 500+ 一级网点合作伙伴、5000+ 规模二级网点合作伙伴和超 100,000 家终端渠道，经销商“亿元俱乐部”超过 50 家；具体复购率和合作年限未公开", "客户复购率/合作年限", ["S1", "S4"]),
-                    _resource_row("客户获取方式", "以“分销网络 + 行业大客户 + 海外本土化 + 集团能源生态”为核心，国内依靠渠道覆盖和重点客户深耕，海外依靠区域本土化、能源/电力项目和数据中心项目", "招投标/关系介绍/市场开发等", ["S1", "S4"]),
-                    _resource_row("客户满意度", "公开资料未披露客户对正泰服务和产品质量的系统评价；官网质量信用资料披露客服热线、官网、微信公众号、小程序等全媒体服务闭环，可作为服务触点侧影，仍需补充施耐德共同终端客户、业主指定项目和历史投诉/售后反馈", "客户对其服务/产品质量的评价", ["S12"]),
+                    _resource_row("客户粘性", "低压分销渠道包括500+一级网点、5000+规模二级网点和超100,000家终端渠道，经销商“亿元俱乐部”超过50家；这种渠道粘性是施耐德在中低端市场被替代的最大结构性风险", "客户复购率/合作年限", ["S1", "S4", "S19"]),
+                    _resource_row("客户获取方式", "正泰以“分销网络+行业大客户+海外本土化+集团能源生态”获客，国内依靠渠道覆盖和重点客户深耕，海外依靠区域本土化、能源/电力项目和数据中心项目；施耐德需用设计院规范、业主标准和高端服务前置防守", "招投标/关系介绍/市场开发等", ["S1", "S4", "SE2"]),
+                    _resource_row("客户满意度", "公开资料未披露系统满意度；官网质量信用资料披露客服热线、官网、微信公众号、小程序等服务闭环，说明其在服务触点上持续补强。施耐德需监测共同客户是否因响应、价格、交付转向正泰", "客户对其服务/产品质量的评价", ["S12", "S19"]),
                 ],
             },
         ]
@@ -1395,32 +1896,35 @@ def _resource_row(field_name: str, value: str, description: str, source_ids: lis
 
 
 def _customer_sales_market(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_sales_market(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "销售体系",
                 "rows": [
-                    _sales_row("销售团队规模", "2025 年年报披露销售人员 3,891 人；经销商“亿元俱乐部”规模扩充至 50 家以上", "销售人员数量", ["S1"]),
-                    _sales_row("销售模式", "直销、经销/分销、行业大客户、海外本土化渠道与项目型销售并行；年报披露按销售模式统计主营业务收入", "直销/经销/代理", ["S1", "S4"]),
-                    _sales_row("销售区域划分", "国内以华东、华中、华北、华南等区域经营，海外覆盖欧洲、亚太、西亚非、拉美、北美，并推进全球区域本土化", "如何划分销售区域", ["S1"]),
-                    _sales_row("销售渠道", "拥有 500+ 一级网点合作伙伴、5000+ 规模二级网点合作伙伴和超 100,000 家终端渠道；同时发展欧洲专业批发商、海外区域渠道、官方微信公众号服务号/订阅号、官网、小程序等数字化触点", "自有渠道/合作渠道", ["S1", "S4", "S11", "S12"]),
-                    _sales_row("招投标能力", "公开资料未披露投标成功率；从电网、新能源、数据中心、轨交、海外电力项目等场景看，具备行业项目销售与标杆项目交付能力", "投标成功率、标书制作能力", ["S1"]),
+                    _sales_row("销售团队规模", "2025年年报披露销售人员3,891人，经销商“亿元俱乐部”规模扩充至50家以上；正泰的销售组织是施耐德渠道防守的核心对手", "销售人员数量", ["S1", "S4"]),
+                    _sales_row("销售模式", "直销、经销/分销、行业大客户、海外本土化渠道与项目型销售并行；其打法覆盖施耐德从分销到KA项目的主要通路，应按通路建立竞争雷达", "直销/经销/代理", ["S1", "S4", "S20"]),
+                    _sales_row("销售区域划分", "国内以华东、华中、华北、华南等区域经营，海外覆盖欧洲、亚太、西亚非、拉美、北美，并推进全球区域本土化；施耐德需按区域比较正泰报价、交期和服务能力", "如何划分销售区域", ["S1", "S5"]),
+                    _sales_row("销售渠道", "拥有500+一级网点、5000+规模二级网点和超100,000家终端渠道，同时发展欧洲专业批发商、海外区域渠道、微信公众号、官网、小程序等触点；这会直接冲击施耐德分销份额和长尾客户触达", "自有渠道/合作渠道", ["S1", "S4", "S11", "S12"]),
+                    _sales_row("招投标能力", "公开资料未披露投标成功率；但电网、新能源、数据中心、轨交、海外电力等项目线索显示其具备行业项目销售能力。施耐德应沉淀正泰参与项目的招标条款、报价区间、品牌库位置和丢单原因", "投标成功率、标书制作能力", ["S1", "S19"]),
                 ],
             },
             {
                 "category": "市场覆盖",
                 "rows": [
-                    _sales_row("覆盖省份", "国内业务覆盖全国主要区域，集团制造与业务布局涉及温州、上海、嘉兴、沈阳、咸阳、济南、合肥、武汉、南阳、盐城等；具体省份清单需内部销售区域表核验", "业务覆盖哪些省份", ["S1", "S5"]),
-                    _sales_row("重点市场", "华东、华中和海外为收入高贡献区域；海外重点拓展欧洲、亚太、西亚非、拉美、北美，北美聚焦数据中心项目", "核心市场区域", ["S1"]),
-                    _sales_row("市场定位", "国内低压电器规模型龙头，覆盖大众到中高端市场；在高端场景需通过认证、可靠性和数字化服务与国际品牌竞争", "高端/中端/低端市场", ["S1"]),
-                    _sales_row("品牌影响力", "年报称正泰在国内低压电器工业 OEM、建筑、个人用户三大细分市场位列第一，并持续强化品牌影响力；质量信用和多渠道服务资料增强客户服务可信度", "在当地市场的知名度", ["S1", "S12"]),
+                    _sales_row("覆盖省份", "国内业务覆盖全国主要区域，集团制造与业务布局涉及温州、上海、嘉兴、沈阳、咸阳、济南、合肥、武汉、南阳、盐城等；对施耐德应形成省区级正泰强弱热力图", "业务覆盖哪些省份", ["S1", "S5"]),
+                    _sales_row("重点市场", "华东、华中和海外为收入高贡献区域；海外重点拓展欧洲、亚太、西亚非、拉美、北美，北美聚焦数据中心项目。施耐德防守重点是华东/华中分销、海外认证和北美数据中心相关项目", "核心市场区域", ["S1", "SE2"]),
+                    _sales_row("市场定位", "正泰已从中低端/大众市场向中高端、行业项目和海外市场上移；行业研究认为施耐德仍在高端市场具优势，但正泰产品线、研发和渠道能力正在追赶", "高端/中端/低端市场", ["S19", "S20"]),
+                    _sales_row("品牌影响力", "年报称正泰在国内低压电器工业OEM、建筑、个人用户三大细分市场位列第一；官网白皮书新闻披露其在能源电力、工业OEM和国产低压出口等维度表现突出，是施耐德中国市场不可忽视的品牌替代力量", "在当地市场的知名度", ["S1", "S12", "S19"]),
                 ],
             },
             {
                 "category": "价格策略",
                 "rows": [
-                    _sales_row("价格水平", "公开资料未披露具体价格水平；结合规模化制造、原材料成本和分销网络优势，常规低压产品预计具备较强成本竞争力，需用项目报价复盘验证", "相对市场均价的高低", []),
-                    _sales_row("价格敏感度", "对常规低压元件价格敏感度高；对业主指定、海外认证、数据中心、关键电源和数字化服务等场景的价值敏感度更高", "对价格竞争的态度", ["S1"]),
+                    _sales_row("价格水平", "公开资料未披露具体价格水平；结合规模化制造、原材料成本、分销网络和本土品牌定位，正泰在常规低压项目预计具备较强价格攻击能力，需用施耐德项目报价复盘验证", "相对市场均价的高低", ["S20"]),
+                    _sales_row("价格敏感度", "正泰对常规低压价格竞争敏感且有能力主动降价抢份额；施耐德应避免在标准品上硬拼价格，把资源集中到业主指定、海外认证、数据中心、关键电源、软件服务和生命周期价值", "对价格竞争的态度", ["S1", "SE1", "SE2"]),
                 ],
             },
         ]
@@ -1522,33 +2026,36 @@ def _sales_row(field_name: str, value: str, description: str, source_ids: list[s
 
 
 def _customer_org_decision(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_org_decision(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "组织架构",
                 "rows": [
-                    _org_row("公司组织架构图", "公开资料可确认上市公司董事会、战略与可持续发展委员会，以及与正泰集团、正泰电源、正泰安能等关联主体的治理联系；完整部门设置和汇报关系需内部/访谈补齐", "部门设置、汇报关系", ["S1"]),
-                    _org_row("决策层级", "建议按集团/上市公司高层、事业部/子公司经营层、采购/技术/生产/服务团队三层决策链管理；具体采购授权层级未公开", "决策流程有几级", ["S1"]),
-                    _org_row("关键部门", "公开资料无法确认具体采购部、技术部、生产部、销售部负责人；建议优先建立采购、技术/质量、生产/服务、行业/海外项目团队联系人地图", "采购部、技术部、生产部、销售部", ["S1"]),
+                    _org_row("公司组织架构图", "公开资料可确认上市公司董事会、战略与可持续发展委员会、可持续发展办公室三级治理架构；竞争研究需另建“竞品作战图”：智慧电器、绿色能源、国际营销、行业项目、研发/质量、供应链、生产/服务和渠道团队", "部门设置、汇报关系", ["S1", "S13"]),
+                    _org_row("决策层级", "建议按集团战略层、上市公司经营层、事业部/子公司经营层、区域/行业项目层四层分析其竞争动作；施耐德防守还需叠加终端业主、设计院、总包和经销商影响链", "决策流程有几级", ["S1", "S3", "S13"]),
+                    _org_row("关键部门", "重点不是采购部，而是决定正泰攻势的部门：智慧电器产品线、区域/行业销售、国际业务、数据中心/新能源项目团队、研发技术、质量认证、供应链和渠道管理", "采购部、技术部、生产部、销售部", ["S1", "S3", "S12", "S13"]),
                 ],
             },
             {
                 "category": "关键决策人",
                 "rows": [
-                    _org_row("董事长/总经理", "董事长为南存辉；高层沟通宜围绕全球化、绿色低碳、能源安全、本土制造和数字化效率展开。总经理/业务单元经营负责人需进一步核验", "姓名、背景、管理风格", ["S1"]),
-                    _org_row("采购负责人", "公开资料未披露采购负责人姓名、职位和权限；需从施耐德历史采购、供应商准入和年度框架数据反查", "姓名、职位、决策权限", []),
-                    _org_row("技术负责人", "公开资料未披露具体技术负责人；技术沟通应关注海外认证、数据中心可靠配电、储能安全、标准图纸和质量闭环", "姓名、职位、技术偏好", []),
-                    _org_row("生产负责人", "公开资料未披露生产负责人；生产侧需核验不同基地的交付、质量、排产和售后责任边界", "姓名、职位、生产管理风格", []),
-                    _org_row("销售负责人", "公开资料未披露具体销售负责人；可先按区域/行业/海外项目团队拆分对接，销售中心和渠道负责人需内部补齐", "姓名、职位、市场策略", []),
+                    _org_row("董事长/总经理", "公开确认的上市公司决策层包括南存辉（董事长、执行公司事务的董事、正泰集团董事长）、陈国良（董事、总裁，曾任低压电器事业部、企管部、销售中心等负责人）、朱信敏（董事、正泰集团总裁）、陆川（董事，绿色能源板块关键负责人）、南尔（董事、副总裁，诺雅克/海外高端低压链路）、林贻明（职工董事、副总裁、财务总监）和潘洁（副总裁、董事会秘书）。竞争研究应把陈国良、南尔、何胜、李明等经营/技术/市场链路作为正泰进攻施耐德优势客户的重点观察对象", "姓名、背景、管理风格", ["S1", "S40"]),
+                    _org_row("采购负责人", "正泰电器本体采购负责人姓名和授权边界未在年报或官网直接披露；公开线索可确认倪逢湖为正泰集团采购部总经理，正泰物联会议还披露采购部负责人和质量管理部负责人参与供应链建设专题。该线索应作为集团采购规则、供应商质量准入和研采供协同的候选触点，不能直接等同正泰电器本体采购决策人，需用内部拜访核验", "姓名、职位、决策权限", ["S42"]),
+                    _org_row("技术负责人", "可公开确认的技术/标准候选触点包括何胜（正泰低压智能电器研究院院长）、李俐（正泰电器总裁助理、集团研究院副院长线索）、徐晓东（正泰电器市场部副总经理、高级工程师，SAC/TC205全国建筑物电气装置标准化技术委员会副主任委员）和南尔（诺雅克/海外高端低压经历）。施耐德应重点研究其低压新品、智能配电、标准化、海外认证和数据中心/新能源方案能力", "姓名、职位、技术偏好", ["S40", "S41", "S43"]),
+                    _org_row("生产负责人", "未找到正泰电器生产负责人姓名的权威公开披露；生产/质量候选触点包括吕俊海（正泰电器质量管理部总经理）和李俐（质量管理数字化、智能制造调研交流中被公开提及）。生产侧仍需补齐乐清、松江、海外制造基地以及低压元件、成套、检测校准、交付排产负责人，用于判断其价格、交期和本地化优势", "姓名、职位、生产管理风格", ["S12", "S42", "S43"]),
+                    _org_row("销售负责人", "销售/市场公开线索包括陈国良（现任总裁，曾任销售中心总经理，并在高中低压一体化营销大会作中国区营销工作主题报告）、李明（正泰集团市场部总经理）和徐晓东（正泰电器市场部副总经理）。区域负责人和行业负责人未逐一公开，应按区域、行业、海外、数据中心/新能源项目制继续拆分，因为这些团队决定正泰对施耐德KA和盘厂渠道的攻击路径", "姓名、职位、市场策略", ["S40", "S41", "S44"]),
                 ],
             },
             {
                 "category": "决策流程",
                 "rows": [
-                    _org_row("采购决策流程", "待内部核验。建议按需求提出、技术评审、商务比价、质量准入、最终批准五步复盘，并区分常规物料、项目物料和海外认证物料", "谁提议-谁评估-谁批准", []),
-                    _org_row("技术选型流程", "需核验技术选型是由终端业主、设计院、总包、正泰技术部门还是海外项目规范主导；施耐德切入点在业主指定、认证和高可靠场景", "技术评审参与方", []),
-                    _org_row("决策周期", "公开资料未披露从需求到采购决策的周期；需区分常规采购、项目采购、海外项目采购和业主指定采购", "从需求到采购决策的周期", []),
-                    _org_row("决策影响因素", "预计价格、品牌、认证、交期、质量、服务、客户指定和集团协同共同影响；权重需通过赢丢单复盘和关键人访谈确认", "价格/质量/服务/关系等权重", ["S1"]),
+                    _org_row("采购决策流程", "竞争视角下应改为“替代决策流程”：终端/项目需求提出后，正泰销售或技术团队用自有品牌方案进入设计院/总包/业主品牌库，再由价格、交期、国产化、认证和服务承诺推动替换施耐德", "谁提议-谁评估-谁批准", ["S1", "S4", "S19"]),
+                    _org_row("技术选型流程", "技术选型主导方可能是终端业主、设计院、总包品牌库、正泰技术部门标准BOM、海外认证规范或数据中心/储能安全要求；施耐德必须前移到规范阶段，避免只在采购询价阶段被正泰替代", "技术评审参与方", ["S1", "S3", "SE2"]),
+                    _org_row("决策周期", "公开资料未披露标准周期；建议按施耐德被替代场景拆分：分销现货、项目询报价、设计院入库、海外认证、数据中心/储能项目、紧急售后替换六类周期", "从需求到采购决策的周期", []),
+                    _org_row("决策影响因素", "价格、自有品牌、国产替代、渠道关系、交期、业主/设计院指定、认证/合规、质量、服务、全球项目支持共同影响；施耐德高端防守的关键是把认证、可靠性和服务权重前置", "价格/质量/服务/关系等权重", ["S1", "S3", "S13", "S20"]),
                 ],
             },
         ]
@@ -1557,28 +2064,28 @@ def _customer_org_decision(customer: str) -> list[dict[str, Any]]:
             {
                 "category": "组织架构",
                 "rows": [
-                    _org_row("公司组织架构图", "公开资料未披露完整组织架构图；仅能确认企业主体、法人/负责人线索、荣誉资质和项目型业务特征，部门设置与汇报关系需客户访谈补齐", "部门设置、汇报关系", ["ZH1", "ZH5", "ZH14"]),
-                    _org_row("决策层级", "推测项目决策随招投标类型变化：业主/设计院规范前置，技术/设计校核，采购/商务比价，总经理或实际经营负责人审批；实际层级待核验", "决策流程有几级", ["ZH2", "ZH3", "ZH4", "ZH5"]),
-                    _org_row("关键部门", "建议重点确认技术/设计、采购、项目/销售、生产/质量、售后负责人；平台资料披露其质量管理荣誉但未披露部门负责人和权限边界", "采购部、技术部、生产部、销售部", ["ZH14"]),
+                    _org_row("公司组织架构图", "招聘介绍披露公司由董事长和总经理领导，下设市场部、驻外办事处、人事部、技术部、采购部、生产部、质保部、销售部、财务部、办公室，并下设4个子公司；完整汇报关系仍需客户确认", "部门设置、汇报关系", ["ZH1", "ZH9", "ZH14"]),
+                    _org_row("决策层级", "建议按经营负责人、项目/销售、技术设计、采购商务、生产/质保五层拆解；招投标项目还要前置业主、设计院、总包和央企供应商准入影响", "决策流程有几级", ["ZH2", "ZH3", "ZH4", "ZH5", "ZH9"]),
+                    _org_row("关键部门", "公开可确认市场部、驻外办事处、技术部、采购部、生产部、质保部、销售部等职能；需补齐各部门负责人、项目授权额度、价格审批和质量放行边界", "采购部、技术部、生产部、销售部", ["ZH9", "ZH14"]),
                 ],
             },
             {
                 "category": "关键决策人",
                 "rows": [
-                    _org_row("董事长/总经理", "公开资料仅确认法人/负责人线索王永贵；其具体职务、背景和管理风格需工商底档、客户经理或拜访访谈核验", "姓名、背景、管理风格", ["ZH1", "ZH5"]),
-                    _org_row("采购负责人", "公开资料未披露采购负责人；需确认其对价格、账期、交付、竞品替代和年度框架的决策权限", "姓名、职位、决策权限", []),
-                    _org_row("技术负责人", "公开资料未披露技术负责人；需确认柜体方案、元器件品牌边界、标准图纸、智能配电需求和品牌替换权", "姓名、职位、技术偏好", []),
-                    _org_row("生产负责人", "公开资料未披露生产负责人；需核验高压柜、低压柜、母线槽、桥架、配电箱的排产、质检和交付责任", "姓名、职位、生产管理风格", []),
-                    _org_row("销售负责人", "公开资料未披露销售负责人；需确认其区域项目、央企准入、总包关系和招投标策略", "姓名、职位、市场策略", []),
+                    _org_row("董事长/总经理", "公开主体信息确认法定负责人王永贵；招聘介绍口径显示公司由董事长和总经理领导，需访谈确认王永贵是否兼任最终经营审批人及其项目决策风格", "姓名、背景、管理风格", ["ZH1", "ZH5", "ZH9"]),
+                    _org_row("采购负责人", "采购部职能可由招聘介绍确认，但负责人未公开；需确认价格、账期、交付、竞品替代、年度框架和重大项目采购的审批权限", "姓名、职位、决策权限", ["ZH9"]),
+                    _org_row("技术负责人", "技术部职能可由招聘介绍确认，负责人未公开；需确认柜体方案、元器件品牌边界、标准图纸、智能配电需求和业主/设计院指定品牌替换权", "姓名、职位、技术偏好", ["ZH3", "ZH4", "ZH9"]),
+                    _org_row("生产负责人", "生产部和质保部职能可由招聘介绍确认；负责人未公开，需核验高压柜、低压柜、母线槽、桥架、配电箱的排产、质检、出厂试验和交付责任", "姓名、职位、生产管理风格", ["ZH9", "ZH14"]),
+                    _org_row("销售负责人", "销售部、市场部和驻外办事处职能可由招聘介绍确认；需确认区域项目负责人、央企准入维护人、总包关系维护人和招投标策略负责人", "姓名、职位、市场策略", ["ZH2", "ZH5", "ZH9"]),
                 ],
             },
             {
                 "category": "决策流程",
                 "rows": [
-                    _org_row("采购决策流程", "推测招投标项目由业主/设计院规范前置，总包与采购部门比价，技术部校核品牌和参数，最终由经营负责人或授权人员批准；需访谈确认", "谁提议-谁评估-谁批准", ["ZH3", "ZH4"]),
-                    _org_row("技术选型流程", "技术选型可能受业主/设计院规范、总包品牌库、客户技术部和供应商授权共同影响；需确认施耐德是否已进入常规 BOM 或指定品牌清单", "技术评审参与方", ["ZH3", "ZH4", "ZH5"]),
-                    _org_row("决策周期", "公开资料未披露决策周期；高压柜/公共事业、化工、住宅改造、母线槽项目周期可能差异较大，需按项目复盘", "从需求到采购决策的周期", []),
-                    _org_row("决策影响因素", "预计价格、交期、账期、质量、业主指定、设计院规范、本地服务和项目履约风险共同影响；权重需通过赢丢单复盘确认", "价格/质量/服务/关系等权重", ["ZH3", "ZH4", "ZH5"]),
+                    _org_row("采购决策流程", "项目/销售获取招标或总包需求，技术部校核品牌与参数，采购部组织询价比价和交期确认，生产/质保评估交付风险，经营负责人按项目金额和客户等级批准；具体授权表需访谈补齐", "谁提议-谁评估-谁批准", ["ZH3", "ZH4", "ZH9"]),
+                    _org_row("技术选型流程", "技术选型受业主/设计院规范、总包品牌库、客户技术部、央企合格供应商准入和供应商授权共同影响；施耐德应确认是否进入常规BOM、设计院偏好和项目指定品牌清单", "技术评审参与方", ["ZH3", "ZH4", "ZH5", "ZH9"]),
+                    _org_row("决策周期", "公开资料未披露标准周期；建议区分桥架/母线槽、配电箱、低压柜、高压柜和央企项目五类，按投标截止、技术澄清、生产排产、交货节点反推周期", "从需求到采购决策的周期", ["ZH2", "ZH3"]),
+                    _org_row("决策影响因素", "预计价格、交期、账期、质量、业主指定、设计院规范、本地服务、央企合格供应商准入和项目履约风险共同影响；化工/轨交/水利项目质量与资信权重更高", "价格/质量/服务/关系等权重", ["ZH3", "ZH4", "ZH5", "ZH14"]),
                 ],
             },
         ]
@@ -1587,28 +2094,28 @@ def _customer_org_decision(customer: str) -> list[dict[str, Any]]:
             {
                 "category": "组织架构",
                 "rows": [
-                    _org_row("公司组织架构图", "中国电气装备/许继体系内企业；公开报道显示天宇推行阿米巴经营，把原两个事业部拆分为 9 个业务单元并公开竞聘业务单元经理；高校就业资料补充其导师制、轮岗和岗位培养机制，完整组织架构图需内部补齐", "部门设置、汇报关系", ["TY1", "TY8", "TY15"]),
-                    _org_row("决策层级", "建议按董事长/总经理层、业务单元经理、技术/设计、采购/供应链、质量/生产/服务五类节点管理；集团供应链和年度物料清单可能影响外部品牌准入", "决策流程有几级", ["TY1", "TY6", "TY8"]),
-                    _org_row("关键部门", "关键部门包括 9 个业务单元、技术/设计、采购/供应链、生产/质量/服务、销售/项目团队；高校就业资料显示招聘电气、机械、工艺、质检、设备、信息运维等岗位，具体负责人和审批权限未公开", "采购部、技术部、生产部、销售部", ["TY1", "TY6", "TY15"]),
+                    _org_row("公司组织架构图", "中国电气装备/许继体系内企业；公开报道显示天宇推行阿米巴经营，拆分出 9 个业务单元并公开竞聘业务单元经理；MOM 平台覆盖销售、设计、排产、采购、供应链、仓储、生产全过程", "部门设置、汇报关系", ["TY1", "TY2", "TY8", "TY15"]),
+                    _org_row("决策层级", "建议按集团/许继体系、天宇董事长/经营层、9个业务单元、销售/项目、设计技术、采购/供应链、生产/质量/服务七类节点管理；集团供应链和年度物料清单可能影响外部品牌准入", "决策流程有几级", ["TY1", "TY2", "TY6", "TY8"]),
+                    _org_row("关键部门", "关键部门包括 9 个业务单元、销售、设计、排产、采购、供应链、仓储、生产、质量/质检、设备/信息运维和项目服务；MOM 数据可成为识别真实流程责任人的线索", "采购部、技术部、生产部、销售部", ["TY1", "TY2", "TY6", "TY15"]),
                 ],
             },
             {
                 "category": "关键决策人",
                 "rows": [
-                    _org_row("董事长/总经理", "张红彬为法定代表人/董事长线索，并在集团报道中作为天宇经营改革和战略目标的核心发声人；适合作为高层关系重点对象", "姓名、背景、管理风格", ["TY1", "TY3"]),
-                    _org_row("采购负责人", "公开资料未披露采购负责人；需确认年度中标物料清单、供应商准入、价格、账期和交付承诺的审批权限", "姓名、职位、决策权限", ["TY6"]),
-                    _org_row("技术负责人", "公开资料未披露技术负责人；低压柜岗位显示技术侧参与方案优化、报价审核和项目元器件型号确认，是施耐德标准 BOM 切入关键", "姓名、职位、技术偏好", ["TY6"]),
-                    _org_row("生产负责人", "公开资料未披露生产负责人；智能制造升级和质量攻坚线索显示生产/质量负责人需重点沟通交付、出厂检验和质量闭环", "姓名、职位、生产管理风格", ["TY1", "TY2"]),
-                    _org_row("销售负责人", "公开资料未披露销售负责人；业务单元经理和金牌营销员机制表明销售/经营责任下沉，需按行业项目确认实际负责人", "姓名、职位、市场策略", ["TY1"]),
+                    _org_row("董事长/总经理", "张红彬为法定代表人/董事长线索，并在集团报道中作为天宇经营改革、文化建设和战略目标的核心发声人；适合作为高层关系与年度合作框架赞助人", "姓名、背景、管理风格", ["TY1", "TY3"]),
+                    _org_row("采购负责人", "公开资料未披露采购负责人；采购节点被 MOM 平台覆盖，需确认年度中标物料清单、供应商准入、价格、账期、交期和集团协同采购的审批权限", "姓名、职位、决策权限", ["TY2", "TY6"]),
+                    _org_row("技术负责人", "公开资料未披露技术负责人；低压柜岗位显示技术侧参与方案优化、报价审核、元器件型号确认和非年度招标物料提请招标，是施耐德标准BOM切入关键", "姓名、职位、技术偏好", ["TY6"]),
+                    _org_row("生产负责人", "公开资料未披露生产负责人；MOM 覆盖排产、仓储、生产全过程，智能制造升级和质量攻坚线索显示生产/质量负责人需重点沟通交付、出厂检验和质量闭环", "姓名、职位、生产管理风格", ["TY1", "TY2"]),
+                    _org_row("销售负责人", "公开资料未披露销售负责人；业务单元经理、金牌营销员机制和MOM销售流程表明销售/经营责任下沉，需按新能源、储能、化工、水利等行业项目确认实际负责人", "姓名、职位、市场策略", ["TY1", "TY2"]),
                 ],
             },
             {
                 "category": "决策流程",
                 "rows": [
-                    _org_row("采购决策流程", "基于公开岗位职责，项目/销售获取招标文件和业主规范，技术部门做方案优化与元器件型号确认，采购/供应链按年度中标物料、价格、交期和准入执行，业务单元对利润、回款、质量、交付负责", "谁提议-谁评估-谁批准", ["TY1", "TY6"]),
-                    _org_row("技术选型流程", "低压柜设计岗位负责前端方案优化、报价审核，并根据年度中标物料供应商确认项目元器件型号；非指定且不在年度招标范围内的元器件需提请招标", "技术评审参与方", ["TY6"]),
-                    _org_row("决策周期", "公开资料未披露从需求到采购决策周期；大型项目可能受招标节点、年度物料准入和项目交期影响，引江济淮项目交货期覆盖 2025 年 3 月至 2026 年 6 月", "从需求到采购决策的周期", ["TY4"]),
-                    _org_row("决策影响因素", "年度中标物料清单、业主指定、价格/成本、交期、质量、售后、集团供应链协同和业务单元利润共同影响；施耐德需前移到准入和技术标准环节", "价格/质量/服务/关系等权重", ["TY1", "TY6"]),
+                    _org_row("采购决策流程", "项目/销售获取招标文件和业主规范，设计技术做方案优化、报价审核和元器件型号确认，采购/供应链按年度中标物料、价格、交期和准入执行，业务单元对利润、回款、质量、交付负责，MOM 数据贯穿流程", "谁提议-谁评估-谁批准", ["TY1", "TY2", "TY6"]),
+                    _org_row("技术选型流程", "低压柜设计岗位负责前端方案优化、报价审核，并根据年度中标物料供应商确认项目元器件型号；非指定且不在年度招标范围内的元器件需提请招标，说明准入前置价值很高", "技术评审参与方", ["TY6"]),
+                    _org_row("决策周期", "公开资料未披露标准周期；大型项目受招标节点、年度物料准入、MOM排产和项目交期影响，引江济淮项目交货期覆盖 2025 年 3 月至 2026 年 6 月，可用项目节点反推", "从需求到采购决策的周期", ["TY2", "TY4"]),
+                    _org_row("决策影响因素", "年度中标物料清单、业主指定、价格/成本、交期、质量、售后、集团供应链协同、MOM交付数据和业务单元利润共同影响；施耐德需前移到准入、技术标准和项目排产环节", "价格/质量/服务/关系等权重", ["TY1", "TY2", "TY6"]),
                 ],
             },
         ]
@@ -1652,40 +2159,165 @@ def _org_row(field_name: str, value: str, description: str, source_ids: list[str
     }
 
 
+def _customer_org_decision_blueprint(customer: str) -> dict[str, Any]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        src = _petrochem_detail_src(petrochem_data)
+        account_type = petrochem_data.get("profile", {}).get("account_type", "油气化工KA")
+        return {
+            "title": f"{account_type} 多角色决策链",
+            "decision_path": [
+                {
+                    "stage": "项目/装置需求",
+                    "owner": "基地、项目公司、生产运行或检维修团队",
+                    "signal": "先识别新建、技改、检修备件、开车保运或年度框架采购入口。",
+                    "source_ids": src,
+                },
+                {
+                    "stage": "技术与安全评审",
+                    "owner": "设备、电仪、工艺、安环、EPC/设计院",
+                    "signal": "关键负载、连续生产、安全合规、通信协议、保护配合和品牌库共同影响选型。",
+                    "source_ids": src,
+                },
+                {
+                    "stage": "商务与准入",
+                    "owner": "采购、供应链、招标平台、项目管理",
+                    "signal": "需核验集团准入、框架协议、EPC包绑定、供货周期和现场服务承诺。",
+                    "source_ids": src,
+                },
+                {
+                    "stage": "最终批准与交付",
+                    "owner": "授权领导、项目负责人、基地管理层",
+                    "signal": "批准权通常随金额、项目级别和安全风险上移，开车节点会放大交付确定性权重。",
+                    "source_ids": src,
+                },
+            ],
+            "priority_contacts": [
+                {"role": "项目入口人", "status": "P1", "evidence": "项目公司/基地项目负责人", "action": "确认在建、技改、检修和备件项目清单", "source_ids": src},
+                {"role": "技术否决人", "status": "P1", "evidence": "设备/电仪/EPC技术负责人", "action": "共建单线图、品牌库、保护配合和通讯点表", "source_ids": src},
+                {"role": "采购推进人", "status": "P1", "evidence": "采购/招标/供应链负责人", "action": "确认准入、框架、价格、账期和交期边界", "source_ids": src},
+                {"role": "运行影响人", "status": "P2", "evidence": "生产运行/检维修/安环负责人", "action": "量化停机风险、备件和现场响应价值", "source_ids": src},
+            ],
+            "decision_rules": [
+                "新建项目优先锁定EPC/设计院与项目公司技术规范",
+                "技改检修优先锁定基地设备/电仪与检维修窗口",
+                "年度框架优先锁定集团准入、采购策略和历史装机评价",
+            ],
+            "missing_data": ["基地级组织图", "项目负责人名单", "设备/电仪负责人", "采购授权表", "品牌库/准入状态"],
+        }
+    if _is_chint_customer(customer):
+        return {
+            "title": "正泰：核心竞品竞争链路图",
+            "decision_path": [
+                {"stage": "竞品战略牵引", "owner": "董事会、集团战略层、智慧电器/绿色能源经营层", "signal": "正泰以低压龙头、绿色能源和全球化为核心攻势，目标不是采购施耐德，而是扩大自有品牌份额。", "source_ids": ["S1", "S5", "S13"]},
+                {"stage": "客户/渠道渗透", "owner": "区域销售、行业大客户、经销商网络、海外团队", "signal": "10万+终端渠道和行业客户会直接争夺施耐德分销、OEM、建筑、数据中心和新能源客户入口。", "source_ids": ["S1", "S4", "S19"]},
+                {"stage": "技术/品牌替代", "owner": "研发技术、质量认证、产品线、设计院/总包接口", "signal": "通过自有品牌、标准BOM、认证、交期和价格进入业主/设计院品牌库，形成对施耐德替代。", "source_ids": ["S1", "S3", "S12", "S20"]},
+                {"stage": "高端防守窗口", "owner": "施耐德行业销售、设计院团队、服务和数字化团队", "signal": "施耐德需要在数据中心、海外认证、关键负载、EcoStruxure和生命周期服务上前置锁定不可替代价值。", "source_ids": ["SE1", "SE2", "SE3"]},
+            ],
+            "priority_contacts": [
+                {"role": "竞品战略负责人", "status": "P1", "evidence": "正泰战略、全球化和低压龙头定位明确", "action": "建立正泰战略动作季度跟踪，包括新品、区域、渠道、海外和数据中心动态", "source_ids": ["S1", "S5", "S19"]},
+                {"role": "行业/区域销售负责人", "status": "P1", "evidence": "区域、行业、渠道网络是其抢份额主力", "action": "从施耐德丢单和经销商反馈反查正泰攻击团队与报价策略", "source_ids": ["S1", "S4"]},
+                {"role": "技术质量负责人", "status": "P1", "evidence": "公开资料显示研发、质量、认证能力持续增强", "action": "跟踪其新产品、认证、设计院入库和标准BOM，识别施耐德技术壁垒被突破的点", "source_ids": ["S3", "S12", "S20"]},
+                {"role": "共同客户关键人", "status": "P1", "evidence": "数据中心、新能源、工业OEM、建筑等客户重叠度高", "action": "对共同终端客户建立品牌偏好、价格差、服务差和替代风险标签", "source_ids": ["S1", "SE2"]},
+            ],
+            "decision_rules": [
+                "常规低压元件默认是正泰强攻击区，施耐德只做高价值防守",
+                "设计院/业主品牌库是防止被正泰替代的第一战场",
+                "数据中心、海外认证、关键负载、软件服务和全生命周期服务是施耐德差异化主阵地",
+                "所有与正泰的采购/授权合作都要同步做技术资料、价格和客户转化风险隔离",
+            ],
+            "missing_data": ["正泰参与施耐德丢单项目清单", "共同终端客户品牌库", "正泰报价区间", "设计院入库情况", "正泰新品/认证节奏", "施耐德可防守高端场景"],
+        }
+    if _is_zhonghuan_customer(customer):
+        return {
+            "title": "中环：经营负责人牵引的项目型盘厂决策链",
+            "decision_path": [
+                {"stage": "项目线索/招标", "owner": "销售部、市场部、驻外办事处", "signal": "项目来自公共资源、央企合格供应商、总包/EPC和区域招投标渠道。", "source_ids": ["ZH2", "ZH3", "ZH4", "ZH5", "ZH9"]},
+                {"stage": "技术澄清", "owner": "技术部、设计/项目团队", "signal": "根据业主/设计院规范、总包品牌库和产品类型校核元器件品牌与参数。", "source_ids": ["ZH3", "ZH4", "ZH9"]},
+                {"stage": "商务采购", "owner": "采购部、财务部、经营负责人", "signal": "围绕价格、账期、交期、竞品替代和项目利润做比价与授权审批。", "source_ids": ["ZH2", "ZH9"]},
+                {"stage": "排产交付", "owner": "生产部、质保部、售后/项目团队", "signal": "高压柜、母线槽、桥架、配电箱等产品线需区分排产、质检和交付责任。", "source_ids": ["ZH9", "ZH14"]},
+            ],
+            "priority_contacts": [
+                {"role": "最终审批人", "status": "已确认线索", "evidence": "王永贵为法定负责人，招聘页披露董事长/总经理领导口径", "action": "拜访时核验是否兼任最终商务审批和战略客户拍板人", "source_ids": ["ZH1", "ZH9"]},
+                {"role": "项目入口人", "status": "待补", "evidence": "销售部/市场部/驻外办事处存在，但负责人未公开", "action": "按威海、淮安、常州、中车/电建项目反查项目经理", "source_ids": ["ZH2", "ZH3", "ZH4", "ZH9"]},
+                {"role": "技术把关人", "status": "待补", "evidence": "技术部存在，负责人未公开", "action": "先从高压柜、母线槽、桥架/配电箱三类项目约技术澄清会", "source_ids": ["ZH9"]},
+                {"role": "采购与质保", "status": "待补", "evidence": "采购部、质保部存在，负责人未公开", "action": "补齐施耐德准入、竞品替代、出厂检验和服务响应边界", "source_ids": ["ZH9", "ZH14"]},
+            ],
+            "decision_rules": [
+                "公共资源和央企项目先看业主/设计院/总包技术规范",
+                "桥架/母线槽类项目价格和交期权重高，高低压柜项目质量与品牌指定权重更高",
+                "经营负责人可能对重大项目报价、账期和品牌替换有最终影响",
+            ],
+            "missing_data": ["部门负责人名单", "项目经理名单", "采购授权额度", "技术澄清流程", "施耐德/竞品历史采购"],
+        }
+    if _is_tianyu_customer(customer):
+        return {
+            "title": "天宇：集团体系 + 阿米巴业务单元 + MOM流程链",
+            "decision_path": [
+                {"stage": "集团/年度策略", "owner": "中国电气装备/许继体系、天宇经营层", "signal": "集团供应链、年度目标、质量修复和战略行业决定外部品牌准入边界。", "source_ids": ["TY1", "TY8"]},
+                {"stage": "业务单元经营", "owner": "9个业务单元、业务单元经理、销售/项目团队", "signal": "阿米巴机制让利润、回款、质量、交付责任下沉到业务单元。", "source_ids": ["TY1"]},
+                {"stage": "设计与采购联动", "owner": "设计技术、采购/供应链、年度中标物料管理", "signal": "低压柜设计岗位参与报价审核和元器件型号确认，非年度物料需提请招标。", "source_ids": ["TY2", "TY6"]},
+                {"stage": "排产/质量/交付", "owner": "排产、仓储、生产、质量、服务", "signal": "MOM平台贯通销售、设计、排产、采购、供应链、仓储和生产，适合按数据节点定位责任人。", "source_ids": ["TY2"]},
+            ],
+            "priority_contacts": [
+                {"role": "高层赞助人", "status": "已确认线索", "evidence": "张红彬为法定代表人/董事长线索", "action": "围绕年度目标、质量零重大事件和智能制造效率建立合作主题", "source_ids": ["TY1", "TY3"]},
+                {"role": "业务单元经理", "status": "待补", "evidence": "公开资料确认9个业务单元和经理竞聘机制，但名单未公开", "action": "按新能源、储能、化工、水利等项目逐一补齐业务单元负责人", "source_ids": ["TY1"]},
+                {"role": "设计技术负责人", "status": "待补", "evidence": "低压柜设计职责明确，姓名未公开", "action": "围绕标准BOM、年度中标物料、替代审批做技术会", "source_ids": ["TY6"]},
+                {"role": "采购/供应链负责人", "status": "待补", "evidence": "采购和供应链在MOM流程中明确存在", "action": "补齐年度物料清单、准入、价格、交期和集团协同采购规则", "source_ids": ["TY2", "TY6"]},
+            ],
+            "decision_rules": [
+                "年度中标物料清单是施耐德进入标准BOM的关键前置",
+                "业务单元利润、回款、质量和交付会影响品牌替换接受度",
+                "MOM流程可用于定位真实责任人和量化交付效率价值",
+            ],
+            "missing_data": ["9个业务单元名单", "业务单元经理", "年度中标物料清单", "采购负责人", "设计负责人", "MOM关键节点责任人"],
+        }
+    return {
+        "title": "待补组织与决策链",
+        "decision_path": [],
+        "priority_contacts": [],
+        "decision_rules": [],
+        "missing_data": ["组织架构图", "关键部门", "关键人", "采购流程", "技术选型流程"],
+    }
+
+
 def _customer_strategy_needs(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_strategy_needs(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "战略方向",
                 "rows": [
-                    _strategy_row("短期目标", "围绕智慧电器与绿色能源两大主线推进，智慧电器强调“区域、行业、产品”三位一体营销、全球区域本土化、数智互联平台和关键应用技术；券商研报也将低压电器稳步增长和新能源增量作为观察重点", "1-2年内的发展目标", ["S1", "S10"]),
-                    _strategy_row("中长期规划", "未来 3-5 年方向可归纳为全球区域本土化、新型电力系统、数字化平台、轻资产和平台化、高端行业突破；证券研究视角支持从低压电器+新能源双主线跟踪机会", "3-5年发展战略", ["S1", "S10"]),
-                    _strategy_row("业务扩张计划", "围绕风光储充、数据中心、轨交、智能配电、光储直柔、户用光伏、电站运营、逆变器储能和综合能源服务扩张", "是否计划拓展新业务领域", ["S1"]),
-                    _strategy_row("区域扩张计划", "在重点国家推进制造、研发、供应链和服务闭环；海外拓展欧洲、亚太、西亚非、拉美、北美等市场，北美聚焦数据中心项目", "是否计划拓展新市场区域", ["S1", "S3"]),
+                    _strategy_row("短期目标", "正泰当前经营主线是“智慧电器+绿色能源”双轮驱动，并以“全球化、数智化、绿色化”为短期增长抓手。智慧电器侧重点是全球区域本土化、“区域-行业-产品”三位一体营销、“532+1”渠道生态、行业客户突破和“泰无界”数智互联平台；绿色能源侧重点是户用光伏、电站交易、逆变器储能、虚拟电厂与绿证业务。对施耐德而言，这不是单一客户需求，而是正泰在低压、数据中心、新能源和数字化配电上的进攻路线", "1-2年内的发展目标", ["S1", "S45"]),
+                    _strategy_row("中长期规划", "中长期方向可概括为五条：产业一体化、全球本土化、数字正泰/平台化、新型电力系统、零碳能源生态。正泰集团层面明确践行“产业化、科技化、国际化、数字化、平台化”战略，并构建绿色能源、智能电气、智能家居三大产业生态及产业培育、科创孵化平台；正泰电器则从低压元件龙头向全球智慧能源解决方案商升级。该方向与施耐德的能源管理、配电数字化和可持续发展叙事高度重叠", "3-5年发展战略", ["S1", "S5", "S45"]),
+                    _strategy_row("业务扩张计划", "业务扩张聚焦高景气和高价值场景：新型电力系统、风光储充、数据中心/算力中心、智能配网、光储直柔、轨交、锂电池、充电桩、半导体、智慧城市基建、节能降碳和综合能源服务。2025年报道提到正泰推出AI智能框架控制系统、风光储专用断路器、5G基站专供产品，并在北美以“北美接单-总部设计-越南制造”模式拿下超大型算力中心订单；这些场景与施耐德高端低压、UPS/配电、能效管理和数字化服务重合", "是否计划拓展新业务领域", ["S1", "S45", "S49", "SE2"]),
+                    _strategy_row("区域扩张计划", "区域扩张呈现“全球营销+本土制造+本地服务”结构：欧洲巩固核心批发商和新能源/电梯客户，亚太、西亚非扩大分销和本土技术方案，北美聚焦数据中心与墨西哥工业园，拉美培育工业客户；官网还披露2026年海外在线客服首站落地亚太。正泰海外制造和服务体系升级会削弱施耐德在全球交付、认证和本地服务上的传统优势", "是否计划拓展新市场区域", ["S3", "S5", "S45", "S47", "SE2"]),
                 ],
             },
             {
                 "category": "数字化转型",
                 "rows": [
-                    _strategy_row("数字化现状", "已有数字化车间、智能质控、能源数字化平台和智慧运维能力；“泰无界”平台覆盖智慧配电、微电网、运维和能源数智运营，服务侧还具备官网、微信公众号、小程序等触点", "ERP/MES/CRM等系统使用情况", ["S1", "S3", "S12"]),
-                    _strategy_row("数字化需求", "需要围绕协议开放、数据互通、国际业主标准合规、智慧配电、微电网和能源运维增强互联互通，施耐德可做互补型方案而非简单平台替代", "对数字化工厂、智能生产的需求", ["S1"]),
-                    _strategy_row("数字化预算", "公开资料未披露年度数字化转型预算；官网披露正泰电器累计投入超过 23 亿元推进智能制造，可作为投入意愿侧影", "数字化转型投入预算", ["S3"]),
+                    _strategy_row("数字化现状", "正泰已具备较完整的制造与能源数字化底座：官网披露累计投入20多亿元建设6大类数字化车间，产线全流程数字监控覆盖生产、设备、质量、能耗等关键质控点；年报和报道披露“泰无界”数智互联平台、AI场景应用、精准运营决策、数字化变革和能源数智运营。它已经不是普通数字化采购方，而是把数字化作为产品、渠道、制造和能源运营的竞争能力", "ERP/MES/CRM等系统使用情况", ["S1", "S3", "S12", "S45"]),
+                    _strategy_row("数字化需求", "实际需求画像应是“继续强化自研平台+补齐国际场景能力”：包括开放协议与数据互通、边缘计算+云端协同、智能断路器/智能量测开关、微电网/虚拟电厂、数据中心高可靠配电监控、海外本土交付系统、供应链质量追溯和AI辅助运营。施耐德若切入，应避免直接替换其平台，而是找国际业主标准、EcoStruxure开放生态、第三方可信运维、关键负载可靠性和跨国认证场景", "对数字化工厂、智能生产的需求", ["S1", "S45", "S49", "SE1", "SE2"]),
+                    _strategy_row("数字化预算", "公开资料没有披露年度预算，但正泰官网披露智能制造累计投入20多亿元，集团简介披露年均研发投入占销售4%-12%，2025年报道还显示“数字正泰建设”被列为未来新动能。这说明数字化投入是持续战略预算，不是一次性系统采购；施耐德应以高价值场景共创、国际项目背书和标杆试点方式比较价值", "数字化转型投入预算", ["S3", "S5", "S45"]),
                 ],
             },
             {
                 "category": "绿色低碳",
                 "rows": [
-                    _strategy_row("双碳目标", "年报披露公司成立碳达峰碳中和工作领导小组，并通过“绿色能源系统+各类用能场景”推进产业融合", "是否制定碳减排目标", ["S1"]),
-                    _strategy_row("绿色产品需求", "绿色能源业务覆盖户用光伏、光伏电站、逆变器与储能、综合能源服务，对微电网、储能安全、能效管理和低碳园区有显性需求", "对环保型产品的需求", ["S1"]),
-                    _strategy_row("ESG评级", "公开年报披露 ESG/可持续发展相关治理和实践，但本项目未摘录第三方 ESG 评级；需补查评级机构或 ESG 报告", "企业ESG评级情况", ["S1"]),
+                    _strategy_row("双碳目标", "正泰已把零碳纳入核心战略：公开“零碳宣言”显示2028年实现运营碳中和（含碳抵消），2035年实现运营净零碳排放并建立价值链碳排放管理体系；2025年温州大桥园区、智能工控园区、量测园区、上海诺雅克园区、物联技术园区通过组织碳中和及零碳工厂双认证。绿色低碳是正泰对外获客和对内制造升级的共同抓手", "是否制定碳减排目标", ["S13", "S46", "S48", "S50"]),
+                    _strategy_row("绿色产品需求", "绿色产品需求集中在“源-网-荷-储”与客户侧零碳场景：户用光伏、电站开发/交易、逆变器与储能、光储充、风光储专用断路器、直流配电、BIPV、零碳园区、虚拟电厂、绿证、电力交易和综合能源服务。对施耐德而言，正泰很可能用“光伏+储能+低压配电+数字平台”打包进入客户；施耐德要在关键负载可靠性、国际认证、能效管理和第三方平台可信度上形成差异", "对环保型产品的需求", ["S1", "S18", "S45", "S49", "SE1"]),
+                    _strategy_row("ESG评级", "2025可持续发展报告披露正泰已获得/披露多类ESG表现：EcoVadis银牌、商道ESG评级A-、Wind ESG评级A、MSCI ESG评级BBB、标普CSA 48分，并参与企业ESG、碳中和路线图、供应链ESG管理等团体标准建设。竞争研究应比较正泰与施耐德在可持续供应链、低碳方案、客户ESG披露和国际评级叙事上的差异", "企业ESG评级情况", ["S50", "S13", "SE1"]),
                 ],
             },
             {
                 "category": "电气升级需求",
                 "rows": [
-                    _strategy_row("智能配电需求", "显性需求包括智能配电、微电网、储能、光储充、弱电网适应、数据中心高可靠配电、轨交认证、海外认证和能源运维", "对智能配电柜、物联网的需求", ["S1"]),
-                    _strategy_row("能效管理需求", "针对正泰工厂、海外制造基地、数据中心和共同客户项目，可提出能效诊断、配电监测、关键配电可靠性、微电网和光储充一体化试点", "对能耗监测、节能改造的需求", ["S1", "S3"]),
-                    _strategy_row("设备更新需求", "公开资料未披露现有设备更新换代计划、预算和优先厂区；建议围绕乐清基地、海外制造基地和数据中心相关项目访谈核验", "现有设备更新换代计划", []),
+                    _strategy_row("智能配电需求", "正泰的智能配电需求已转化为产品化竞争能力：AI智能框架控制系统、智能量测开关、边缘计算+云端协同微型断路器、InModule高参数智能低压柜、南网智能配电和储能项目、光储直柔国家重点研发课题等均指向智能配电升级。施耐德应从标准规范、关键负载、软件生态、网络安全和国际业主认证维度做差异化防守", "对智能配电柜、物联网的需求", ["S1", "S37", "S38", "S45", "S49", "SE1"]),
+                    _strategy_row("能效管理需求", "能效管理既是正泰内部降本需求，也是其对外解决方案：五大零碳园区、光伏/储能/充电/数智平台组合、虚拟电厂、电力交易、绿证和能源数智运营都说明其需要持续优化能耗监测、碳数据、分布式能源调度和运维效率。施耐德的切入口应是第三方审计可信度、国际数据中心/工业客户规范、复杂场景能效诊断和跨品牌系统集成", "对能耗监测、节能改造的需求", ["S45", "S46", "S48", "S50", "SE1"]),
+                    _strategy_row("设备更新需求", "公开资料未披露单一设备更新清单，但可推断更新重点在三类：一是智能工厂和质量检测体系迭代，二是海外本土化制造/适配点升级（新加坡、捷克、越南等），三是数据中心、新能源、轨交和北美UL/IEC认证场景的高端低压产品迭代。对施耐德而言，这类需求多数会被正泰自有产品吸收，只有在国际认证、客户指定、关键可靠性或第三方平台场景中存在合作/替代机会", "现有设备更新换代计划", ["S3", "S45", "S47"]),
                 ],
             },
         ]
@@ -1808,31 +2440,35 @@ def _strategy_row(field_name: str, value: str, description: str, source_ids: lis
 
 
 def _customer_pain_opportunities(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_pain_opportunities(petrochem_data)
     if _is_chint_customer(customer):
+        playbook = _chint_schneider_pain_playbook()
         return [
             {
                 "category": "业务痛点",
                 "rows": [
-                    _pain_row("生产效率痛点", "海外、数据中心、储能等项目复杂度提升，叠加主要基地劳动力成本和供给压力，项目设计、装配、调试和交付效率需要继续提升", "用标准化选型、数字化调试、装配培训和快速备件响应降低工程人力消耗", "生产过程中效率低下的环节", ["S1"]),
-                    _pain_row("质量管控痛点", "公开资料未披露质量问题频发点；但高端终端客户、海外认证、储能安全和数据中心可靠性要求持续提升，质量闭环需聚焦关键场景；官网质量信用资料显示其在客服与回访闭环上持续建设", "提供出厂测试清单、装配工艺培训、现场服务复盘和高可靠元器件组合", "质量问题的频发点", ["S1", "S3", "S12"]),
-                    _pain_row("供应链痛点", "铜、银、钢材、塑料等原材料成本占低压业务成本比重高，海外监管、关税、原产地规则和地缘风险也影响跨境项目交付", "建立框架协议、替代选型、保供计划和海外认证/服务支持机制", "供货、库存、物流等问题", ["S1"]),
-                    _pain_row("人才痛点", "年报提示生产基地劳动力成本与供给紧平衡；新能源、储能、微电网和海外认证场景也需要复合型技术与项目人才", "用技术日、认证培训、选型工具和标准 BOM 降低对个别专家的依赖", "人才招聘、培养、流失问题", ["S1"]),
+                    _pain_row("生产效率痛点", "正泰官网披露数据中心方案覆盖低压配电系统和列头柜实时监控，宁夏中卫云数据中心案例强调24小时不间断与全链协同；这说明其正在进入对交付节拍、系统联调、在线监测和服务响应要求更高的关键负载场景。叠加年报披露的全球化、本地化制造与新能源业务扩张，设计、装配、调试和跨区域交付效率会成为其高端突破的验证点", "施耐德防守机会：在正泰交付复杂、跨国认证、数据中心快速部署场景，用预制化配置、调试服务、备件保障和专家服务建立差异", "生产过程中效率低下的环节", _source_union(["S1", "S16", "S47", "S51", "SE2"], playbook["生产效率痛点"]["source_ids"]), playbook["生产效率痛点"]),
+                    _pain_row("质量管控痛点", "正泰公开披露质量信用与多体系管理，但其数据中心、储能、微电网、海外认证和关键负载项目对连续供电、安全、弧光/温升风险、FAT/SAT证据提出更高要求；作为施耐德竞品，正泰不仅要证明产品合格，还要证明能在高端终端客户场景替代国际品牌的系统可靠性", "施耐德防守机会：强化关键负载案例、出厂测试、现场服务、可靠性数据和生命周期服务，把质量从“证书”提升为“风险成本”比较", "质量问题的频发点", _source_union(["S1", "S3", "S12", "S16", "S51", "SE2"], playbook["质量管控痛点"]["source_ids"]), playbook["质量管控痛点"]),
+                    _pain_row("供应链痛点", "年报提示低压电器主要原材料包含铜、银、钢材、塑料等，成本波动和运输成本会影响盈利；同时正泰正在推进全球服务体系、亚太在线客服和区域本土化，海外监管、关税、原产地规则、认证差异和跨境服务一致性会影响其价格优势稳定性", "施耐德防守机会：在海外项目、合规认证、全球备件和服务SLA上建立正泰难以短期复制的确定性价值", "供货、库存、物流等问题", _source_union(["S1", "S45", "S47", "SE1"], playbook["供应链痛点"]["source_ids"]), playbook["供应链痛点"]),
+                    _pain_row("人才痛点", "正泰从低压元件向数据中心、储能、微电网、智慧配电和海外本地化扩张，公开材料显示其数智化、全球服务和国家重点研发方向持续加码；这些场景需要懂低压保护、通信、软件、认证、运维和行业方案的复合型团队，人才能力会成为高端项目复制的瓶颈之一", "施耐德防守机会：用设计院教育、客户技术日、规范培训和服务专家网络锁定高端客户心智", "人才招聘、培养、流失问题", _source_union(["S1", "S45", "S47", "S49", "S52", "SE1"], playbook["人才痛点"]["source_ids"]), playbook["人才痛点"]),
                 ],
             },
             {
                 "category": "技术痛点",
                 "rows": [
-                    _pain_row("设计能力痛点", "数据中心、储能、微电网、光储充和海外项目对跨标准设计、保护配合、通信互联和认证合规要求更高", "共建行业标准图纸库、选型库和海外/数据中心/储能标准方案", "设计效率、标准化程度问题", ["S1"]),
-                    _pain_row("技术成本痛点", "低压业务原材料成本占比高，自有品牌具备价格和规模优势，高端外部元器件必须证明全生命周期价值", "用 TCO、能效收益、减少返工、缩短调试周期和降低故障风险来解释施耐德价值", "成本优化能力不足", ["S1"]),
-                    _pain_row("技术人才痛点", "公开资料未披露具体技术能力缺口；弱电网适应、储能并网、海外认证和数字化运维需要跨领域能力", "面向技术、质量、生产团队做认证培训、保护配合培训和数字化运维工作坊", "技术人员能力不足", ["S1"]),
+                    _pain_row("设计能力痛点", "正泰已把数据中心、工商业储能、光储直柔、配电物联、台区拓扑识别和能碳管理作为解决方案方向；这些场景对跨标准设计、保护配合、通信互联、BOM一致性、认证合规和软件接口提出更高要求，也是其向施耐德高端阵地上攻时最容易被业主/EPC验证的能力点", "施耐德防守机会：前置设计院规范、保护配合、通信架构、验证报告和国际认证资料，避免采购阶段被正泰低价替换", "设计效率、标准化程度问题", _source_union(["S1", "S16", "S18", "S49", "S52", "S53", "SE2", "SE3"], playbook["设计能力痛点"]["source_ids"]), playbook["设计能力痛点"]),
+                    _pain_row("技术成本痛点", "低压业务原材料成本占比高，正泰自有品牌具备价格、渠道和本地化规模优势，会用成本优势压缩施耐德标准品空间；但高可靠数据中心、智慧配电和海外认证场景会把成本从单件采购价扩展到调试、故障、运维、停机和认证失败成本", "施耐德防守机会：用TCO、能效收益、故障损失、调试周期、维保SLA和数字化洞察证明高端价值", "成本优化能力不足", _source_union(["S1", "S20", "S31", "SE1"], playbook["技术成本痛点"]["source_ids"]), playbook["技术成本痛点"]),
+                    _pain_row("技术人才痛点", "弱电网适应、储能并网、光储直柔、智能配电平台和海外认证需要跨电气、软件、通信、测试和运维的人才；正泰公开强调数智绿色双轮驱动与泰无界/EmpowerX平台，说明其技术人才结构要从产品研发扩展到平台化方案交付", "施耐德防守机会：面向业主/设计院而非正泰内部做技术培训，强化施耐德标准和规范影响力", "技术人员能力不足", _source_union(["S1", "S45", "S49", "S52", "SE1"], playbook["技术人才痛点"]["source_ids"]), playbook["技术人才痛点"]),
                 ],
             },
             {
                 "category": "市场痛点",
                 "rows": [
-                    _pain_row("市场竞争压力", "年报将市场竞争列为风险，国际企业占据高端市场，国内企业在中端/大众市场差异化竞争，常规低压价格敏感", "聚焦高端客户指定、海外认证、关键负载可靠性和服务差异化场景", "来自竞品的压力", ["S1"]),
-                    _pain_row("客户需求变化", "客户需求正在升级到光储充、储能、微电网、数据中心高可靠配电、能源运维和数字化管理；券商研究也强调低压电器稳步增长和新能源业务增量", "以智能配电、微电网、能效管理、电能质量和运维服务包进入联合项目", "客户需求升级带来的挑战", ["S1", "S10"]),
-                    _pain_row("行业政策变化", "海外监管、关税、原产地规则、地缘风险及新能源政策周期会影响项目选择和交付节奏", "提供目标市场合规、认证、全球服务和本地化交付支持", "政策调整带来的影响", ["S1"]),
+                    _pain_row("市场竞争压力", "正泰年报将市场竞争列为风险；低压行业公开资料显示正泰与施耐德在中国低压市场形成直接竞争，正泰连续获得行业六星企业并在能源电力、工业OEM、数据中心、新能源等场景加速突破。施耐德面对的是强势本土竞品而非一般盘厂客户", "施耐德防守机会：聚焦高端客户指定、海外认证、关键负载、数据中心、软件服务和生命周期服务，不在常规低压价格战中消耗资源", "来自竞品的压力", _source_union(["S1", "S19", "S20", "S31", "SE2"], playbook["市场竞争压力"]["source_ids"]), playbook["市场竞争压力"]),
+                    _pain_row("客户需求变化", "客户需求升级到光储充、储能、微电网、数据中心高可靠配电、能源运维、能碳管理和数字化管理；正泰已通过数据中心方案、工商业储能、泰无界/EmpowerX和智慧配电平台布局，正在争夺施耐德原本具备优势的智能配电与能效叙事", "施耐德防守机会：把智能配电、能效管理、电能质量、资产顾问和服务合同打包成客户成果，而不是单件产品对比", "客户需求升级带来的挑战", _source_union(["S1", "S16", "S18", "S45", "S52", "S53", "SE1", "SE2"], playbook["客户需求变化"]["source_ids"]), playbook["客户需求变化"]),
+                    _pain_row("行业政策变化", "国产替代、双碳、新能源政策、算力基础设施建设、海外监管、关税、原产地规则和地缘风险会重塑品牌选择；部分政策有利于正泰的国产品牌、本地化制造和绿色能源布局，施耐德必须把竞争从“进口/外资品牌”转成“本土化高可靠能力+全球合规能力”", "施耐德防守机会：突出本土化能力、合规认证、关键负载安全、国际客户认可和全球服务网络，选择性参与政策友好场景", "政策调整带来的影响", _source_union(["S1", "S5", "S46", "S48", "S50", "SE1"], playbook["行业政策变化"]["source_ids"]), playbook["行业政策变化"]),
                 ],
             },
         ]
@@ -1921,7 +2557,8 @@ def _customer_pain_opportunities(customer: str) -> list[dict[str, Any]]:
     ]
 
 
-def _pain_row(field_name: str, pain: str, opportunity: str, description: str, source_ids: list[str]) -> dict[str, Any]:
+def _pain_row(field_name: str, pain: str, opportunity: str, description: str, source_ids: list[str], playbook: dict[str, Any] | None = None) -> dict[str, Any]:
+    playbook = playbook or {}
     return {
         "field": field_name,
         "value": pain,
@@ -1929,26 +2566,33 @@ def _pain_row(field_name: str, pain: str, opportunity: str, description: str, so
         "opportunity": opportunity,
         "description": description,
         "source_ids": source_ids,
+        "schneider_advantage": playbook.get("advantage", ""),
+        "schneider_playbook": playbook.get("playbook", ""),
+        "playbook_output": playbook.get("output", ""),
+        "playbook_stage": playbook.get("stage", ""),
     }
 
 
 def _customer_risk_assessment(customer: str) -> list[dict[str, Any]]:
+    petrochem_data = find_petrochem_ka(customer)
+    if petrochem_data:
+        return _petrochem_risk_assessment(petrochem_data)
     if _is_chint_customer(customer):
         return [
             {
                 "category": "经营风险",
                 "rows": [
-                    _risk_assessment_row("财务风险", "整体经营稳健，但 2025 年资产负债率约 66.13%，较 2024 年约 63.28% 上升；光伏业务收入同比下降 15.62%，光伏电站工程承包收入同比下降 35.04%，需关注资金、负债和周期波动", "资金链、负债、回款风险", ["S1"]),
-                    _risk_assessment_row("法律风险", "2025 年报披露近三年受证券监管机构处罚情况为不适用，本年度无重大诉讼、仲裁事项；公司、控股股东和实际控制人诚信状况良好，上市公司层面公开合规风险较低", "诉讼、行政处罚记录", ["S1"]),
-                    _risk_assessment_row("经营稳定性", "正泰电器具备规模、渠道和多业务基础，但需关注光伏周期、海外监管/关税/地缘风险及客户集中度；前五名客户销售额占 38.64%，未出现单一客户超过 50%", "是否存在经营异常", ["S1"]),
+                    _risk_assessment_row("财务风险", "对施耐德而言，正泰财务风险不是主要合作信用问题，而是竞争可持续性问题。2025年资产负债率约66.13%，较2024年约63.28%上升；光伏业务收入同比下降15.62%、光伏电站工程承包收入同比下降35.04%，周期压力可能促使其在低压/渠道侧更积极抢份额", "资金链、负债、回款风险", ["S1"]),
+                    _risk_assessment_row("法律风险", "2025年报披露近三年受证券监管机构处罚情况为不适用，本年度无重大诉讼、仲裁事项；上市公司层面合规风险较低。施耐德应把风险重点放在竞品信息合规、渠道报价合规和知识产权/技术资料边界", "诉讼、行政处罚记录", ["S1"]),
+                    _risk_assessment_row("经营稳定性", "正泰具备规模、渠道、现金流和多业务基础，短期经营稳定性强；竞争风险主要来自其长期份额扩张、国产替代、海外本地化和数据中心/新能源高端突破，而不是其经营异常", "是否存在经营异常", ["S1", "S19", "S20"]),
                 ],
             },
             {
                 "category": "信用风险",
                 "rows": [
-                    _risk_assessment_row("付款信用", "公开资料未披露其对施耐德历史付款是否准时；需按正泰电器本部及关联主体分别查询施耐德应收账款、账期、逾期、授信额度和回款争议", "历史付款是否准时", []),
-                    _risk_assessment_row("合同履约", "公开资料未发现施耐德相关合同履约争议；上市公司年报披露本年度无重大诉讼仲裁，但具体采购合同履约仍需施耐德订单、交付和验收记录核验", "合同履约情况", ["S1"]),
-                    _risk_assessment_row("售后纠纷", "公开资料未披露与施耐德相关售后纠纷、质量索赔或服务争议；官网质量信用资料显示其建设客服热线、官网、微信公众号、小程序等服务闭环，但施耐德侧仍需用服务工单、投诉、备件、现场响应和质量闭环记录补齐", "售后问题处理情况", ["S12"]),
+                    _risk_assessment_row("付款信用", "若存在施耐德采购关系，仍需按正泰本部及关联主体查询应收、账期、逾期和授信；但竞争视角更应关注其是否利用账期、价格、渠道返利与国产替代政策抢夺施耐德客户", "历史付款是否准时", []),
+                    _risk_assessment_row("合同履约", "公开资料未发现施耐德相关合同履约争议，上市公司年报披露本年度无重大诉讼仲裁；需用施耐德项目库复盘正泰参与项目的交付、验收和服务表现，判断其能否在高端场景稳定替代施耐德", "合同履约情况", ["S1"]),
+                    _risk_assessment_row("售后纠纷", "公开资料未披露与施耐德相关售后纠纷；官网质量信用资料显示其建设客服热线、官网、微信公众号、小程序等服务闭环。竞争风险在于正泰服务能力持续补齐后，会削弱施耐德以服务做溢价的优势", "售后问题处理情况", ["S12", "SE1"]),
                 ],
             },
         ]
@@ -2017,6 +2661,982 @@ def _risk_assessment_row(field_name: str, value: str, description: str, source_i
         "description": description,
         "source_ids": source_ids,
     }
+
+
+def _petrochem_source_ids(data: dict[str, Any]) -> list[str]:
+    return [str(source.get("id", "")) for source in data.get("sources", []) if source.get("id")]
+
+
+def _petrochem_src(data: dict[str, Any], *indexes: int) -> list[str]:
+    source_ids = _petrochem_source_ids(data)
+    if not indexes:
+        return source_ids[:2]
+    selected = [source_ids[index] for index in indexes if 0 <= index < len(source_ids)]
+    return selected or source_ids[:1]
+
+
+def _petrochem_citation(source_ids: list[str]) -> str:
+    return " ".join(f"【{source_id}】" for source_id in source_ids if source_id)
+
+
+def _petrochem_fact(data: dict[str, Any], key: str) -> str:
+    return str(data.get("facts", {}).get(key, "待核验"))
+
+
+def _petrochem_details(data: dict[str, Any]) -> dict[str, Any]:
+    return data.get("public_details", {})
+
+
+def _petrochem_detail(data: dict[str, Any], key: str, fallback_key: str = "", default: str = "待核验") -> str:
+    details = _petrochem_details(data)
+    if details.get(key):
+        return str(details[key])
+    if fallback_key:
+        return _petrochem_fact(data, fallback_key)
+    return default
+
+
+def _petrochem_detail_src(data: dict[str, Any]) -> list[str]:
+    details = _petrochem_details(data)
+    source_ids = details.get("source_ids")
+    if isinstance(source_ids, list) and source_ids:
+        return [str(source_id) for source_id in source_ids]
+    return _petrochem_src(data)
+
+
+def _source_union(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for source_id in group:
+            if source_id and source_id not in merged:
+                merged.append(source_id)
+    return merged
+
+
+def _chint_schneider_pain_playbook() -> dict[str, dict[str, Any]]:
+    return {
+        "生产效率痛点": {
+            "stage": "线索识别 -> 交付验证",
+            "advantage": "施耐德在数据中心、低压配电、UPS/关键电源、监控和服务上可形成系统交付能力；Power Commission可用于低压配电柜配置、测试、调试和报告，适合对抗正泰在数据中心快速交付中的国产化与成本优势。",
+            "playbook": "对正泰正在攻击的数据中心、智算中心、储能和海外项目，建立“高复杂度项目防守包”：把业主关注点从交期/单价转到FAT/SAT、在线监测、UPS/低压联调、备件SLA和调试报告；优先在设计院/EPC阶段锁定施耐德关键负载标准。",
+            "output": "关键负载防守清单、FAT/SAT节点表、服务SLA样板、正泰替代风险问诊表",
+            "source_ids": ["SE2", "SE6", "KB1"],
+        },
+        "质量管控痛点": {
+            "stage": "技术协议 -> FAT/SAT",
+            "advantage": "BlokSeT MB/iPMCC官方资料强调低压/MCC安全、可靠、连接能力、实时热监测、弧光防护和预测维护；施耐德低压产品体系覆盖MasterPacT、ComPacT、BlokSeT、EcoStruxure Power Commission等，可把质量比较从证书扩展到运行风险。",
+            "playbook": "在正泰可能以国产替代进入的高端项目中，要求技术协议写入热风险、弧光风险、保护整定、通讯数据、调试报告和投运后健康检查；把“合格证/认证”转为“关键负载停机风险+长期运行证据”比较。",
+            "output": "质量风险对比页、FAT/SAT检查表、热/弧光监测点表、投运健康报告模板",
+            "source_ids": ["SE3", "SE5", "SE6", "KB1"],
+        },
+        "供应链痛点": {
+            "stage": "报价/商务 -> 项目交付",
+            "advantage": "施耐德可把全球服务、数字服务、备件、配置工具和本土服务结合起来，形成比单纯元器件采购更稳定的交付确定性；Power Build可输出配置、单线图、BOM、规格和订货文件，减少跨区域项目BOM偏差。",
+            "playbook": "面对正泰全球本地化和低价打法，施耐德不要直接拼单价，而是做“供应链确定性证明”：列出关键元器件可得性、备件路径、认证边界、交付变更流程和服务响应SLA；在海外/国际客户项目中突出合规和服务连续性。",
+            "output": "供应链确定性对比表、认证/原产地核验清单、备件路径、项目变更RACI",
+            "source_ids": ["SE7", "SE8", "KB1"],
+        },
+        "人才痛点": {
+            "stage": "市场影响 -> 技术赋能",
+            "advantage": "施耐德数字服务依托预测分析、AI、远程监控和Connected Services Hub，可把专家能力转为客户可感知的资产健康与远程诊断；研修院方法强调按角色、阶段、层级和证据做项目打标。",
+            "playbook": "把培训对象放在业主、设计院、EPC、数据中心运维和盘厂联盟，而不是正泰内部：通过半天技术日讲关键负载、智能配电、Power Commission、PME/数字服务和生命周期服务，让项目关键人形成施耐德标准语言。",
+            "output": "设计院/EPC技术日材料、角色培训计划、项目打标表、关键人影响地图",
+            "source_ids": ["SE7", "SE6", "KB1"],
+        },
+        "设计能力痛点": {
+            "stage": "概念设计 -> 技术澄清",
+            "advantage": "施耐德低压产品与EcoStruxure Power、BlokSeT/Prisma、Power Build、Power Commission可把设计从元件清单提升为系统架构，提前锁定保护配合、通讯点表、单线图、BOM和调试边界。",
+            "playbook": "对正泰重点突破的数据中心、储能、微电网和海外项目，在设计院/EPC澄清会前输出“施耐德高可靠电气包模板”：单线图、关键断路器、柜型建议、通讯架构、调试报告和认证材料，先锁规范再进报价。",
+            "output": "设计院澄清包、SLD/BOM模板、保护配合材料、通讯点表",
+            "source_ids": ["SE3", "SE8", "SE6", "KB1"],
+        },
+        "技术成本痛点": {
+            "stage": "方案阶段 -> 商务决策",
+            "advantage": "施耐德数字服务可用资产健康、电能质量、远程诊断和预测维护把成本比较转为运行结果；数据中心方案与低压配电产品体系可把TCO、停机损失和运维效率纳入商务决策。",
+            "playbook": "针对正泰低价和本土渠道优势，建立三列表：一次采购价、故障/停机/认证风险、调试与运维成本。常规回路选择性参与，关键负载、数据中心、海外认证和智能配电项目必须用TCO材料防替代。",
+            "output": "TCO对比表、故障损失假设、运维SLA价值页、关键/非关键回路分级表",
+            "source_ids": ["SE2", "SE3", "SE7", "KB1"],
+        },
+        "技术人才痛点": {
+            "stage": "项目定义 -> 复盘复制",
+            "advantage": "施耐德可用研修院三层两闭环方法、Power Commission调试工具和数字服务专家网络，把跨电气、软件、通信、调试和运维的能力缺口转为项目角色分工与服务补位。",
+            "playbook": "对每个被正泰争夺的项目做RACI：谁负责硬件选型、软件配置、FAT、预调试、现场放线、集成调试、SAT和培训交付；缺口由施耐德应用工程师、服务团队或伙伴补位，降低业主对国产低价替代的安全感。",
+            "output": "项目RACI、能力缺口表、联合调试计划、复盘复制模板",
+            "source_ids": ["SE6", "SE7", "KB1"],
+        },
+        "市场竞争压力": {
+            "stage": "机会分级 -> 商务防守",
+            "advantage": "施耐德应避免在常规低压价格战中消耗资源，优势放在高端ACB、关键负载、数据中心、智能配电、全球服务、生命周期服务和国际客户认可；这些场景能把竞争从“国产低价”转为“运行风险和业务结果”。",
+            "playbook": "建立正泰竞争机会分级：低价可替代回路只做选择性参与；高可靠不可替代回路必须前置业主/EPC/设计院规范，绑定MasterPacT/ComPacT、BlokSeT、EcoStruxure Power、服务SLA和数字化报表。",
+            "output": "正泰竞争分级表、不可替代价值清单、业主/EPC防替代话术",
+            "source_ids": ["SE2", "SE3", "SE5", "SE7", "KB1"],
+        },
+        "客户需求变化": {
+            "stage": "场景洞察 -> 方案打包",
+            "advantage": "EcoStruxure Power、低压配电产品、数字服务和数据中心方案可把智能配电、能效、电能质量、告警、资产健康和预测维护连接成客户成果，对标正泰的泰无界/EmpowerX和智慧配电叙事。",
+            "playbook": "在光储充、数据中心、微电网和智慧配电机会中，不做单产品比价，改做“客户成果包”：安全供电、能效管理、电能质量、告警闭环、资产健康、运维SLA；用结果KPI压过正泰的平台宣传。",
+            "output": "客户成果包、KPI清单、EcoStruxure场景图、正泰平台对比页",
+            "source_ids": ["SE1", "SE2", "SE3", "SE7", "KB1"],
+        },
+        "行业政策变化": {
+            "stage": "战略沟通 -> 项目落地",
+            "advantage": "施耐德可用中国本土化能力、全球合规经验、能效与低碳方案、关键负载可靠性和数字服务，对冲国产替代与双碳政策带来的品牌选择压力。",
+            "playbook": "面对国产替代、双碳和算力基础设施政策，不用“外资品牌”叙事防守，改用“本土化制造+全球合规+关键负载安全+能效数据”组合；优先选择国际客户、海外出海、数据中心和高可靠工商业项目做标杆。",
+            "output": "政策友好场景清单、合规证明包、低碳/能效价值页、标杆项目筛选表",
+            "source_ids": ["SE1", "SE2", "SE7", "KB1"],
+        },
+    }
+
+
+def _md_cell(value: Any) -> str:
+    return str(value or "").replace("|", "/").replace("\n", "<br>")
+
+
+def _project_tagging_model(customer: str) -> dict[str, Any]:
+    data = find_petrochem_ka(customer)
+    if not data:
+        return {}
+    details = _petrochem_details(data)
+    facts = data.get("facts", {})
+    profile = data.get("profile", {})
+    return {
+        "headline": "按研修院知识库：角色 + 阶段 + 层级 + 证据打标。",
+        "source_ids": ["KB1", "KB2", "SE1", "SE2", "SE3", "SE4", "ISO1"],
+        "tag_groups": [
+            {
+                "name": "客户角色",
+                "tags": _petrochem_role_tags(data),
+                "why": "油气化工KA通常不是单一采购人，需拆分终端业主、项目公司、EPC/设计院、盘厂成套、系统集成和运维责任方。",
+            },
+            {
+                "name": "项目入口",
+                "tags": _petrochem_entry_tags(data),
+                "why": details.get("business_projects") or facts.get("projects") or profile.get("recommended_focus", ""),
+            },
+            {
+                "name": "阶段标签",
+                "tags": _petrochem_phase_tags(data),
+                "why": "用项目阶段决定下一步材料包和动作：线索期确认角色与时间，方案/选型期锁定架构，调试/交付期关注通讯、点表、FAT/SAT和培训。",
+            },
+            {
+                "name": "技术深度",
+                "tags": ["互联互通产品层", "边缘控制层", "应用分析与服务层", "能效/运维/能碳服务"],
+                "why": "不能把带通讯元件直接等同于完整智能配电，需看软件平台、数据点表、调试验收和运维闭环。",
+            },
+            {
+                "name": "行业场景",
+                "tags": _petrochem_scene_tags(data),
+                "why": "按基地与装置拆分场景，优先看公辅变电所、MCC室、关键连续生产装置、储运码头和高耗能单元。",
+            },
+            {
+                "name": "证据标签",
+                "tags": ["技术协议", "系统架构图", "点表/IP表", "BOM/柜内照片", "FAT/SAT记录", "培训记录", "竣工验收/客户签字"],
+                "why": "项目打标必须能回到证据链，避免只凭公司名称或销售判断定性。",
+            },
+        ],
+        "research_focus": [
+            {
+                "topic": "项目入口与阶段",
+                "questions": [
+                    "当前对应哪个基地、装置、项目包或技改任务",
+                    "谁发起、谁设计、谁采购、谁验收、谁运维",
+                    "当前卡在线索、方案、选型、报价、制造、调试、交付还是运维",
+                ],
+            },
+            {
+                "topic": "电气架构与智能配电资格",
+                "questions": [
+                    "低压、中压、MCC、变频、UPS、公辅变电所和关键负载边界是什么",
+                    "智能元件金额是否超过总元件金额20%",
+                    "是否包含PME/PSO/POI Plus/千里眼/T300/TH110/PD110/环境监测/弧光监测等要素",
+                ],
+            },
+            {
+                "topic": "交付闭环",
+                "questions": [
+                    "硬件和软件分别由谁采购",
+                    "谁负责盘厂安装、预调试、现场放线、集成调试和SAT",
+                    "是否有FAT/SAT、培训、竣工验收和Kitting/Track & Trace要求",
+                ],
+            },
+            {
+                "topic": "能效/碳与运维价值",
+                "questions": [
+                    "是否有能源基线、ISO 50001、能效考核或碳数据目标",
+                    "哪些装置存在电能质量、停机损失、备件或维护窗口压力",
+                    "客户是否愿意从一次项目转为服务框架和资产健康管理",
+                ],
+            },
+            {
+                "topic": "生态角色",
+                "questions": [
+                    "设计院/EPC对品牌入图和技术规范的影响有多大",
+                    "盘厂/成套厂是否具备通讯、点表、调试和软件交付能力",
+                    "竞品装机基础、DCS/仪表包、变压器/中压柜供应商分别是谁",
+                ],
+            },
+        ],
+        "solution_map": [
+            {
+                "layer": "互联互通产品层",
+                "focus": "中低压柜、MTZ/NSX、测量模块、通讯模块、网关、温度/局放/弧光/环境监测",
+                "evidence": "BOM、柜内照片、通讯器件清单、一次/二次图纸",
+            },
+            {
+                "layer": "边缘控制层",
+                "focus": "PME、PSO、POI Plus、T300、千里眼、站控/顺控、PM Box与网关协议",
+                "evidence": "系统架构图、点表/IP表、通讯协议、报警逻辑和调试记录",
+            },
+            {
+                "layer": "应用分析与服务层",
+                "focus": "电力顾问、云能效顾问、运维顾问、能碳管理、报表告警、培训和持续服务",
+                "evidence": "运维SLA、能源基线、ISO 50001/能效目标、服务工单和月报",
+            },
+            {
+                "layer": "交付与证据闭环",
+                "focus": "硬件采购、软件采购、盘厂预调试、现场安装、集成调试、SAT、培训、验收归档",
+                "evidence": "技术协议、FAT/SAT记录、培训签到、竣工验收报告、客户签字和案例复盘材料",
+            },
+        ],
+        "next_outputs": ["客户项目标签卡", "角色-采购路径图", "技术架构/点表清单", "FAT/SAT/培训/验收证据包", "90天访谈与机会池"],
+    }
+
+
+def _petrochem_role_tags(data: dict[str, Any]) -> list[str]:
+    text = _petrochem_search_text(data)
+    tags = ["终端业主", "EPC/总包", "设计院", "盘厂/成套厂", "运维方"]
+    if re.search(r"合资|壳牌|Shell|阿美|BASF|Exxon|外资", text, re.I):
+        tags.append("合资/外资标准方")
+    if re.search(r"园区|基地|大亚湾|湛江|惠州|舟山|连云港|宁东|盘锦", text):
+        tags.append("园区平台/基地业主")
+    if re.search(r"海上|管道|油气田|站场", text):
+        tags.append("站场/平台运维方")
+    return _unique_strings(tags)
+
+
+def _petrochem_entry_tags(data: dict[str, Any]) -> list[str]:
+    text = _petrochem_search_text(data)
+    tags = ["新建/扩建项目", "存量技改", "智能配电升级", "绿色低碳/能效", "运维服务"]
+    if re.search(r"投产|开车|中交|竣工|一期|二期|三期|扩建|在建|开工", text):
+        tags.append("建设转运营")
+    if re.search(r"海上|油气田|管道|站场", text):
+        tags.append("海上平台/油气站场")
+    if re.search(r"码头|储运|港口|罐区", text):
+        tags.append("储运/码头公辅")
+    if re.search(r"煤化工|煤制|轻烃|乙烯|烯烃|芳烃|炼化", text):
+        tags.append("高耗能装置能效")
+    return _unique_strings(tags)
+
+
+def _petrochem_phase_tags(data: dict[str, Any]) -> list[str]:
+    text = _petrochem_search_text(data)
+    if re.search(r"投产|开车|中交|竣工|一期|二期|三期|扩建|在建|开工|一体化基地", text):
+        return [
+            "方案/选型",
+            "硬件采购",
+            "软件采购",
+            "FAT",
+            "预调试",
+            "现场安装",
+            "集成调试",
+            "SAT",
+            "培训交付",
+            "验收归档",
+            "运维服务",
+        ]
+    return ["线索识别", "方案阶段", "选型阶段", "报价/商务", "制造/集成", "调试/交付", "运维服务", "复盘复制"]
+
+
+def _petrochem_scene_tags(data: dict[str, Any]) -> list[str]:
+    text = _petrochem_search_text(data)
+    tags = ["公辅/变电所", "MCC/关键负载", "智能配电", "能效/碳管理"]
+    if re.search(r"炼化|炼油|炼厂", text):
+        tags.append("炼化一体化")
+    if re.search(r"乙烯|烯烃|聚烯烃|芳烃", text):
+        tags.append("乙烯/烯烃")
+    if re.search(r"新材料|聚氨酯|工程塑料|精细化工|化工材料", text):
+        tags.append("化工新材料")
+    if re.search(r"码头|储运|罐区|港口", text):
+        tags.append("储运/码头")
+    if re.search(r"海上|油气田", text):
+        tags.append("海上平台/油气田")
+    if re.search(r"煤化工|煤制|宁东", text):
+        tags.append("煤化工")
+    return _unique_strings(tags)
+
+
+def _petrochem_search_text(data: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for section_name in ("name", "aliases"):
+        value = data.get(section_name)
+        if isinstance(value, list):
+            chunks.extend(str(item) for item in value)
+        elif value:
+            chunks.append(str(value))
+    for section_name in ("profile", "facts", "public_details"):
+        section = data.get(section_name, {})
+        if isinstance(section, dict):
+            chunks.extend(str(value) for value in section.values())
+    return " ".join(chunks)
+
+
+def _unique_strings(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            output.append(item)
+    return output
+
+
+def _petrochem_portrait(
+    customer: str,
+    data: dict[str, Any],
+    opportunities: list[dict[str, str]],
+    risks: list[str],
+    gaps: list[dict[str, Any]],
+) -> dict[str, Any]:
+    profile = data["profile"]
+    facts = data["facts"]
+    portrait = {
+        "headline": f"{profile['short_name']}是{profile['account_type']}，适合按基地、装置和项目制经营",
+        "tags": ["石化/化工KA", profile["opportunity_level"] + "机会", profile["risk_level"] + "风险", "基地型经营", "内部数据待补"],
+        "business_role": f"该客户的核心业务为{facts['business']}，对配电可靠性、装置连续生产、安全环保和能效管理要求高。",
+        "relationship_strategy": f"优先围绕{profile['recommended_focus']}切入；公开资料用于建立机会方向，成交推进仍需施耐德内部交易和客户访谈闭环。",
+        "needs": [
+            "关键装置供配电可靠性",
+            "新建/扩建项目开车与运维",
+            "能源管理和电气资产健康",
+            "安环合规与绿色低碳",
+        ],
+        "pain_points": [
+            facts["risk"],
+            "施耐德历史采购、授权、满意度和关键人信息需内部拉通",
+            "集团、上市公司、项目公司和基地采购主体需要拆分管理",
+        ],
+        "decision_chain": [
+            {"role": "集团/项目公司高层", "focus": "战略合作、重点基地、投资项目和安全底线"},
+            {"role": "设备/电仪/技术部门", "focus": "供配电可靠性、标准选型、备件、保护配合和系统集成"},
+            {"role": "采购/供应链", "focus": "供应商准入、框架协议、价格、交期和本地服务"},
+            {"role": "安环/能源管理/数字化", "focus": "节能降碳、合规、能源可视化和资产健康"},
+        ],
+        "next_questions": [
+            "施耐德在该客户哪些基地/项目已有采购和服务记录？",
+            "当前在建、技改和开车项目对应的电气包负责人是谁？",
+            "哪些装置存在故障、备件、能效或电能质量痛点？",
+        ],
+    }
+    portrait["top_opportunities"] = _portrait_top_opportunities(opportunities)
+    portrait["top_risks"] = risks[:3]
+    portrait["must_fill_fields"] = [
+        {"field": gap["field"], "module": gap["module_name"], "status": gap["status"]} for gap in gaps[:5]
+    ]
+    return portrait
+
+
+def _petrochem_basic_info(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_src(data)
+    return [
+        _basic_row("企业名称", _petrochem_fact(data, "entity"), "集团/上市公司/项目公司主体", src),
+        _basic_row("统一社会信用代码", "需按具体采购主体和项目公司工商底档补齐", "企业唯一标识", []),
+        _basic_row("成立时间", "集团、上市公司或项目公司成立时间需按签约主体区分；公开资料已确认其业务和项目背景", "企业经营年限", src),
+        _basic_row("注册资本", "需按具体签约主体工商底档补齐，集团/项目公司口径不宜混用", "反映企业规模", []),
+        _basic_row("企业性质", _petrochem_fact(data, "nature"), "国企/民企/外资/合资", src),
+        _basic_row("股权结构", _petrochem_fact(data, "ownership"), "主要股东及持股比例", src),
+        _basic_row("法人代表", "需按具体采购或签约主体工商底档补齐", "企业法定代表人", []),
+        _basic_row("注册地址", "需按集团、上市公司、基地公司或项目公司主体分别补齐", "企业注册地", []),
+        _basic_row("实际经营地址", _petrochem_fact(data, "projects"), "生产基地/办公地址", src),
+    ]
+
+
+def _petrochem_certifications(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_src(data)
+    return [
+        _certification_row("低压成套设备生产资质", "该KA通常为终端业主/炼化化工企业，不是盘厂生产资质评价对象；需核验其EPC、盘厂、运维承包商短名单", "资质与认证", []),
+        _certification_row("高压成套设备资质", "该KA通常采购高低压成套设备而非自行对外生产；需核验基地电气运维资质、承包商准入和设备包标准", "资质与认证", []),
+        _certification_row("ISO体系认证", "公开资料可确认其ESG、安环、质量或集团治理线索；ISO9001/14001/45001证书编号与有效期需客户或基地资料补齐", "ISO9001/14001/45001等", src),
+        _certification_row("特种设备生产许可证", "炼化/化工项目涉及压力容器、危化、安全生产等合规边界；需按项目公司和装置许可清单核验", "资质名称与等级", src),
+        _certification_row("电力承包施工资质", "终端业主一般通过EPC/施工/运维承包商执行，需核验其准入承包商及施耐德可合作的电气施工伙伴", "资质名称与等级", []),
+        _certification_row("承装修试资质", "需核验厂区电气运维团队或外包单位的承装/承修/承试资质等级和服务边界", "资质名称与等级", []),
+        _certification_row("施耐德授权等级", "不适用盘厂授权口径；需改为核验施耐德是否进入业主品牌库、框架协议、项目合格供应商和EPC技术规范", "协议厂/授权盘厂/战略合作伙伴", []),
+    ]
+
+
+def _petrochem_scale_finance(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    src = _petrochem_src(data)
+    return {
+        "enterprise_scale": [
+            _metric_row("员工总数", "公开资料未必披露项目公司口径；需按集团、基地和项目公司拆分补齐", "在职员工数量", []),
+            _metric_row("技术人员数量", "大型炼化/化工企业具备电仪、设备、工艺、安环、数字化等专业团队，具体人数需访谈或组织资料补齐", "设计、研发、技术支持人员", src),
+            _metric_row("生产人员数量", "连续生产基地生产、设备、电仪与外委运维人员口径需按基地补齐", "生产一线员工", []),
+            _metric_row("销售人员数量", "终端业主销售体系与盘厂口径不同；可按化工品/能源销售或客户经理体系补充", "销售团队规模", []),
+            _metric_row("厂房面积", _petrochem_fact(data, "projects"), "生产场地面积（㎡）", src),
+            _metric_row("生产基地数量", _petrochem_fact(data, "scale"), "有几个生产基地", src),
+            _metric_row("年产能", _petrochem_fact(data, "products"), "年产高低压柜体数量/产值；石化KA改按装置/产品产能理解", src),
+        ],
+        "financial_status": [
+            _metric_row("年营业收入", _petrochem_fact(data, "finance"), "最近三年营业收入", src),
+            _metric_row("净利润", _petrochem_fact(data, "finance"), "最近三年净利润", src),
+            _metric_row("资产负债率", "上市公司可由年报补齐，项目公司和合资公司需工商/审计/授信资料核验", "财务健康度指标", src),
+            _metric_row("现金流状况", "需结合年报经营现金流、项目资本开支、施耐德账期和回款记录判断", "经营性现金流是否健康", src),
+        ],
+    }
+
+
+def _petrochem_business_capability(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "主营业务",
+            "rows": [
+                _business_row("主营产品类型", _petrochem_detail(data, "business_products", "products"), "高压柜/低压柜/箱变/配电箱等；石化KA改按终端装置与化工产品理解", src),
+                _business_row("产品线覆盖", _petrochem_detail(data, "business_products", "business"), "全产品线", src),
+                _business_row("主营行业领域", _petrochem_detail(data, "resources", "market"), "建筑/工业/电力/新能源等", src),
+                _business_row("业务收入结构", _petrochem_detail(data, "business_revenue", "finance"), "各业务板块收入占比", src),
+            ],
+        },
+        {
+            "category": "技术能力",
+            "rows": [
+                _business_row("设计团队规模", "大型项目通常由业主技术、电仪、设计院/EPC和供应商联合完成；客户内部电气设计人数需访谈补齐。公开技术能力线索：" + _petrochem_detail(data, "business_technology", "digital"), "电气设计人员数量", src),
+                _business_row("设计软件使用", "公开资料未披露EPLAN/CAD/三维设计等工具；需访谈业主电仪团队、EPC和盘厂承包商", "EPLAN/CAD/三维设计等", []),
+                _business_row("研发投入占比", _petrochem_detail(data, "business_technology", "digital"), "研发费用/营业收入", src),
+                _business_row("专利数量", "化工和新材料企业通常具备专利储备，但本初版未逐项检索知识产权数量，需补查国家知识产权平台和年报附注", "发明专利/实用新型/外观设计", []),
+                _business_row("技术合作方", "重点合作方包括设计院、EPC、设备包商、自动化/DCS、电气成套和运维承包商，具体名单需项目访谈补齐", "与哪些设计院/高校合作", []),
+            ],
+        },
+        {
+            "category": "生产能力",
+            "rows": [
+                _business_row("生产设备水平", _petrochem_detail(data, "business_projects", "scale"), "自动化程度/设备先进性", src),
+                _business_row("质量控制体系", "连续生产和危化场景对联锁、供电、检维修、备件和安环质量闭环要求高；公开技术线索显示：" + _petrochem_detail(data, "business_technology", "digital"), "检测设备、质检流程", src),
+                _business_row("生产周期", "连续流程型生产不适用盘厂下单交付周期口径；可改按项目建设、检修窗口和备件响应周期管理", "从下单到交付的平均周期", []),
+                _business_row("准时交付率", "需按施耐德历史订单、EPC交付节点、项目开车和检修窗口验证", "历史订单准时交付比例", []),
+                _business_row("质量合格率", "需以设备故障率、开车一次成功率、停机事件、售后质量和现场服务记录衡量", "产品一次合格率", []),
+            ],
+        },
+        {
+            "category": "项目经验",
+            "rows": [
+                _business_row("代表性项目", _petrochem_detail(data, "business_projects", "projects"), "历史标杆项目案例", src),
+                _business_row("项目类型分布", "炼油、乙烯、芳烃、聚烯烃、新材料、公辅、储运、码头、变电所、数字化和绿色低碳项目；客户公开项目线索：" + _petrochem_detail(data, "business_projects", "projects"), "建筑/工业/市政/电力等占比", src),
+                _business_row("项目地域分布", _petrochem_detail(data, "sales_market", "market"), "业务覆盖省份/城市", src),
+                _business_row("大型项目经验", _petrochem_detail(data, "business_projects", "projects"), "500万+项目经验", src),
+                _business_row("行业标杆客户", "该KA本身即行业标杆终端业主；其下游客户和合作伙伴线索：" + _petrochem_detail(data, "resources", "market"), "服务过的知名客户", src),
+            ],
+        },
+    ]
+
+
+def _petrochem_supply_procurement(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "施耐德合作情况",
+            "rows": [
+                _supply_row("合作年限", "公开资料未披露与施耐德合作年限，需CRM/ERP、框架协议和客户经理记录补齐", "与施耐德合作多少年", []),
+                _supply_row("合作模式", _petrochem_detail(data, "procurement_mode"), "协议厂/授权盘厂/普通客户；石化KA应改按业主品牌库/EPC规范/项目供应商管理", src),
+                _supply_row("历史采购额", "需按集团、基地、项目公司、EPC和经销商供货路径拉通近三年采购额", "近三年施耐德产品采购额", []),
+                _supply_row("采购增长率", "需以近三年施耐德订单、项目开车、技改和检修备件数据计算", "采购额同比增长率", []),
+                _supply_row("主要采购产品", _petrochem_detail(data, "procurement_products"), "断路器/接触器/变频器/软启等", src),
+                _supply_row("授权柜体型号", "业主口径不直接等同盘厂授权；需核验BlokSeT/Okken/MVnex等是否进入业主/EPC规范和盘厂承包商授权范围", "BlokSeT/Okken/MVnex等", []),
+                _supply_row("合作满意度", "需通过设备、电仪、采购、项目和服务团队访谈补齐对施耐德价格、交付、技术支持和售后响应评价", "对施耐德服务、技术支持的满意度", []),
+            ],
+        },
+        {
+            "category": "竞品采购情况",
+            "rows": [
+                _supply_row("主要竞品品牌", _petrochem_detail(data, "competitors"), "西门子/ABB/正泰/德力西等", src),
+                _supply_row("竞品采购比例", "公开资料无法判断，需由项目BOM、供应商清单和施耐德赢丢单复盘测算", "竞品采购额占总采购比例", []),
+                _supply_row("竞品使用原因", _petrochem_detail(data, "decision_factors"), "价格/技术/服务/关系等", src),
+                _supply_row("竞品优势感知", "竞品可能在既有装置装机基础、项目包绑定、本地价格和EPC关系上有优势；客户决策因素：" + _petrochem_detail(data, "decision_factors"), "认为竞品哪些方面更有优势", src),
+                _supply_row("竞品劣势感知", "部分竞品在全球标准、数字化配电、全生命周期服务和关键负载可靠性上可能弱于施耐德", "认为竞品哪些方面不足", []),
+            ],
+        },
+        {
+            "category": "其他供应商",
+            "rows": [
+                _supply_row("其他器件供应商", "需梳理EPC、设计院、主机包、DCS、仪表、变压器、中压柜、低压柜、UPS、变频和服务承包商名单；公开采购生态：" + _petrochem_detail(data, "procurement_mode"), "其他核心供应商", src),
+                _supply_row("柜体供应商", "终端业主通常通过授权盘厂/EPC/成套厂采购柜体；需识别已入围盘厂和施耐德可影响的设计规范", "是否自产柜体或外购", []),
+                _supply_row("供应链稳定性", "大型连续生产基地对备件、保供和检修窗口响应极敏感；公开痛点线索：" + _petrochem_detail(data, "pain_business"), "是否有稳定供货渠道", src),
+            ],
+        },
+    ]
+
+
+def _petrochem_resources(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "客户结构",
+            "rows": [
+                _resource_row("主要客户类型", _petrochem_detail(data, "resources", "market"), "终端业主/总包/设计院/经销商", src),
+                _resource_row("客户行业分布", _petrochem_detail(data, "resources", "market"), "建筑/工业/电力/新能源/交通等", src),
+                _resource_row("客户地域分布", _petrochem_detail(data, "sales_market", "scale"), "主要服务区域", src),
+                _resource_row("头部客户名单", _petrochem_detail(data, "resources", "market") + "；公开资料通常不完整披露前十大终端客户，需年报客户集中度或销售访谈补齐。", "前10大客户名称及行业", src),
+                _resource_row("头部客户收入占比", "上市公司年报可补充客户集中度，合资/项目公司需内部或客户资料补齐", "前10大客户收入贡献", []),
+            ],
+        },
+        {
+            "category": "客户关系",
+            "rows": [
+                _resource_row("客户粘性", "能源化工产品通常具备长期供销、框架、直销和大客户关系；公开市场线索：" + _petrochem_detail(data, "sales_market", "market"), "客户复购率/合作年限", src),
+                _resource_row("客户获取方式", _petrochem_detail(data, "sales_market", "market"), "招投标/关系介绍/市场开发等", src),
+                _resource_row("客户满意度", "公开资料未披露系统满意度，需由其终端客户反馈、质量投诉和销售服务资料补充；对施耐德经营可先关注该KA内部满意度", "客户对其服务/产品质量的评价", []),
+            ],
+        },
+    ]
+
+
+def _petrochem_sales_market(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "销售体系",
+            "rows": [
+                _sales_row("销售团队规模", "终端客户销售人员口径需按能源、化工品、新材料、区域销售或合资公司补齐", "销售人员数量", []),
+                _sales_row("销售模式", _petrochem_detail(data, "sales_market", "market"), "直销/经销/代理", src),
+                _sales_row("销售区域划分", _petrochem_detail(data, "sales_market", "market"), "如何划分销售区域", src),
+                _sales_row("销售渠道", _petrochem_detail(data, "sales_market", "market"), "自有渠道/合作渠道", src),
+                _sales_row("招投标能力", "作为终端业主更多体现为采购招标能力；作为产品销售方则需按化工品销售体系补齐", "投标成功率、标书制作能力", []),
+            ],
+        },
+        {
+            "category": "市场覆盖",
+            "rows": [
+                _sales_row("覆盖省份", _petrochem_detail(data, "sales_market", "scale"), "业务覆盖哪些省份", src),
+                _sales_row("重点市场", _petrochem_detail(data, "resources", "market"), "核心市场区域", src),
+                _sales_row("市场定位", _petrochem_detail(data, "strategy", "strategy"), "高端/中端/低端市场", src),
+                _sales_row("品牌影响力", f"{data['profile']['short_name']}为行业重点客户，公开资料显示其项目或产业地位较强", "在当地市场的知名度", src),
+            ],
+        },
+        {
+            "category": "价格策略",
+            "rows": [
+                _sales_row("价格水平", "化工品价格受周期、油价/煤价/轻烃价差、供需和合约影响；公开市场压力：" + _petrochem_detail(data, "pain_market"), "相对市场均价的高低", src),
+                _sales_row("价格敏感度", "采购端对电气设备价格敏感，但关键负载、安全、连续生产和开车节点更看重可靠性、服务和全生命周期成本；决策因素：" + _petrochem_detail(data, "decision_factors"), "对价格竞争的态度", src),
+            ],
+        },
+    ]
+
+
+def _petrochem_org_decision(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "组织架构",
+            "rows": [
+                _org_row("公司组织架构图", _petrochem_detail(data, "org_chain"), "部门设置、汇报关系", src),
+                _org_row("决策层级", _petrochem_detail(data, "org_chain"), "决策流程有几级", src),
+                _org_row("关键部门", _petrochem_detail(data, "org_chain"), "采购部、技术部、生产部、销售部", src),
+            ],
+        },
+        {
+            "category": "关键决策人",
+            "rows": [
+                _org_row("董事长/总经理", "公开资料可从年报/官网补齐集团高层；对施耐德成交更关键的是基地总经理、项目负责人和设备/电仪负责人", "姓名、背景、管理风格", src),
+                _org_row("采购负责人", "需客户经理和项目访谈补齐采购负责人姓名、权限、准入流程和价格决策边界", "姓名、职位、决策权限", []),
+                _org_row("技术负责人", "需确认电仪、设备、设计院/EPC技术负责人及其对品牌、标准、保护和通信方案的偏好", "姓名、职位、技术偏好", []),
+                _org_row("生产负责人", "需确认生产运行、检维修和装置负责人，其关注点通常是停机风险、备件、开车和故障响应", "姓名、职位、生产管理风格", []),
+                _org_row("销售负责人", "若作为化工产品销售方需补齐销售负责人；施耐德经营该KA时优先关注采购/设备/项目链条", "姓名、职位、市场策略", []),
+            ],
+        },
+        {
+            "category": "决策流程",
+            "rows": [
+                _org_row("采购决策流程", _petrochem_detail(data, "procurement_mode") + "；通常由需求部门提出，技术/设备评审，采购组织招采，安环/项目/EPC参与，最终按授权层级批准。", "谁提议-谁评估-谁批准", src),
+                _org_row("技术选型流程", _petrochem_detail(data, "decision_factors"), "技术评审参与方", src),
+                _org_row("决策周期", "需按新建项目、年度框架、技改、检修备件和紧急抢修五类周期拆分", "从需求到采购决策的周期", []),
+                _org_row("决策影响因素", _petrochem_detail(data, "decision_factors"), "价格/质量/服务/关系等权重", src),
+            ],
+        },
+    ]
+
+
+def _petrochem_strategy_needs(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "战略方向",
+            "rows": [
+                _strategy_row("短期目标", _petrochem_detail(data, "strategy", "strategy"), "1-2年内的发展目标", src),
+                _strategy_row("中长期规划", _petrochem_detail(data, "strategy", "strategy"), "3-5年发展战略", src),
+                _strategy_row("业务扩张计划", _petrochem_detail(data, "business_projects", "projects"), "是否计划拓展新业务领域", src),
+                _strategy_row("区域扩张计划", _petrochem_detail(data, "sales_market", "market"), "是否计划拓展新市场区域", src),
+            ],
+        },
+        {
+            "category": "数字化转型",
+            "rows": [
+                _strategy_row("数字化现状", _petrochem_detail(data, "digital", "digital"), "ERP/MES/CRM等系统使用情况", src),
+                _strategy_row("数字化需求", _petrochem_detail(data, "digital", "digital"), "对数字化工厂、智能生产的需求", src),
+                _strategy_row("数字化预算", "公开资料通常不披露预算，需从年度技改、智能工厂、信息化和项目资本开支中核验", "数字化转型投入预算", []),
+            ],
+        },
+        {
+            "category": "绿色低碳",
+            "rows": [
+                _strategy_row("双碳目标", _petrochem_detail(data, "green", "green"), "是否制定碳减排目标", src),
+                _strategy_row("绿色产品需求", _petrochem_detail(data, "green", "green"), "对环保型产品的需求", src),
+                _strategy_row("ESG评级", "上市公司可补充ESG评级和报告，合资/项目公司需从集团或当地政府披露资料补齐", "企业ESG评级情况", src),
+            ],
+        },
+        {
+            "category": "电气升级需求",
+            "rows": [
+                _strategy_row("智能配电需求", _petrochem_detail(data, "electrical_needs"), "对智能配电柜、物联网的需求", src),
+                _strategy_row("能效管理需求", _petrochem_detail(data, "electrical_needs"), "对能耗监测、节能改造的需求", src),
+                _strategy_row("设备更新需求", "需按在建开车、年度检修、技改、老旧装置替换和国产化项目核验设备更新计划", "现有设备更新换代计划", []),
+            ],
+        },
+    ]
+
+
+def _schneider_pain_playbook() -> dict[str, dict[str, Any]]:
+    return {
+        "生产效率痛点": {
+            "stage": "方案阶段 -> 运维服务",
+            "advantage": "EcoStruxure Power and Process 面向流程工业统一电力与过程，官方资料强调可改善过程能耗、减少非计划停机并提升盈利；PME可把能耗、电能质量和电气健康数据转成可行动分析。",
+            "playbook": "选盛虹炼化/斯尔邦1个高耗能装置或MCC室做30天诊断：采集负载、电能质量、停机事件和检修记录，形成“停机损失+能耗浪费+备件响应”TCO表，再提出MCC/变频/PME/服务SLA组合。",
+            "output": "装置级TCO测算表、能耗异常清单、优先改造回路、90天试点方案",
+            "source_ids": ["SE4", "SE2", "KB1"],
+        },
+        "质量管控痛点": {
+            "stage": "选型阶段 -> FAT/SAT",
+            "advantage": "BlokSeT MB/iPMCC强调低压/MCC安全、可靠和连接能力，包含实时热监测、弧光防护和预测维护；Power Commission可用于低压断路器和数字化配电柜的配置、测试、调试和报告。",
+            "playbook": "把质量议题前移到技术协议：关键回路采用BlokSeT/MCC可靠性语言，要求温度/湿度/弧光监测、保护整定复核、FAT/SAT报告和投运后30/90天健康检查，避免只看出厂合格证。",
+            "output": "FAT/SAT检查表、热风险监测点表、保护整定复核表、投运健康报告模板",
+            "source_ids": ["SE5", "SE6", "KB1"],
+        },
+        "供应链痛点": {
+            "stage": "报价/商务阶段 -> 制造/集成",
+            "advantage": "研修院知识库强调盘厂项目要抓业主、EPC、设计院、盘厂、系统集成和运维边界；Power Build 可输出中压柜配置、SLD、BOM、技术规格和订货文件，降低配置与BOM错误。",
+            "playbook": "组织一次“业主-EPC/设计院-盘厂-自动化包商”四方BOM冻结会：明确施耐德柜内元件、通讯网关、数据点、备件、交期、变更审批和现场调试边界；对关键物料做Kitting/分批交付清单。",
+            "output": "BOM冻结清单、接口责任矩阵、备件安全库存、变更审批表",
+            "source_ids": ["SE8", "KB1", "KB2"],
+        },
+        "人才痛点": {
+            "stage": "调试/交付阶段 -> 运维服务",
+            "advantage": "施耐德数字服务结合预测分析、AI、远程监控和Connected Services Hub，可支持资产健康、远程诊断和主动运维；研修院课程可把客户团队按三层两闭环补齐能力。",
+            "playbook": "为电仪、设备、安环、能源管理和数字化团队做半天联合工作坊：先讲互联互通产品、边缘控制、应用服务三层，再用Power Commission/PME/资产健康案例演示数据如何进入运维闭环。",
+            "output": "角色培训计划、数据点责任表、远程诊断流程、运维SLA样板",
+            "source_ids": ["SE7", "SE6", "KB1"],
+        },
+        "设计能力痛点": {
+            "stage": "线索识别 -> 选型阶段",
+            "advantage": "施耐德可用选型指南、BlokSeT/Prisma/Power Build、PME/PO和EcoStruxure架构把方案从元件清单提升为系统架构，帮助设计院/EPC提前确定单线图、BOM、保护配合和通讯点表。",
+            "playbook": "在设计院/EPC澄清会前输出一版“关键装置电气包模板”：单线图、柜型建议、断路器保护配合、通讯架构、仪表/电气数据接口、FAT/SAT边界，先锁规范再进报价。",
+            "output": "技术澄清包、SLD/BOM模板、通讯点表、设计院问诊清单",
+            "source_ids": ["SE8", "SE1", "KB1"],
+        },
+        "技术成本痛点": {
+            "stage": "方案阶段 -> 商务决策",
+            "advantage": "PME支持能源可视化、正式审计、指标分析、成本分摊和节能验证；Power and Process强调从TOTEX角度改善能耗、减少停机和提升盈利，适合对抗单纯低价采购。",
+            "playbook": "不要只报柜体价，改做三列商务对比：一次采购价、停机/检修风险、能耗和运维成本。用PME/ISO 50001口径给出可验证KPI：电能质量事件、能耗异常、节能验证和故障响应时间。",
+            "output": "TCO对比表、节能验证KPI、运维成本假设、商务价值页",
+            "source_ids": ["SE2", "SE4", "ISO1"],
+        },
+        "技术人才痛点": {
+            "stage": "项目定义 -> 复盘复制",
+            "advantage": "研修院项目模式强调角色+阶段+层级+证据打标，智能配电项目按互联互通产品、边缘控制、应用分析与服务三层交付，可减少客户内部和承包商能力差异。",
+            "playbook": "把技术人才缺口转成项目打标表：每个项目标注谁负责硬件安装、软件配置、FAT、预调试、现场放线、集成调试、SAT、培训交付；缺口处由施耐德专家/服务伙伴补位。",
+            "output": "项目角色RACI、三层能力缺口表、联合调试计划、复盘复制模板",
+            "source_ids": ["KB1", "SE1", "SE6"],
+        },
+        "市场竞争压力": {
+            "stage": "线索识别 -> 商务决策",
+            "advantage": "施耐德优势不在常规低价，而在关键负载可靠性、全球流程工业经验、智能配电、生命周期服务和电力过程一体化；这些能把竞争从价格转向风险和业务结果。",
+            "playbook": "对每个机会打“低价可替代/高可靠不可替代”标签：常规回路只做选择性参与，关键装置、MCC室、公辅变电所、码头储运和连续生产负载优先争取业主/EPC规范前置。",
+            "output": "机会分级表、不可替代价值清单、业主/EPC规范前置材料",
+            "source_ids": ["SE4", "SE5", "SE7", "KB1"],
+        },
+        "客户需求变化": {
+            "stage": "方案阶段 -> 运维服务",
+            "advantage": "EcoStruxure Power的三层架构、PME、Power Operation和数字服务可把智能配电、能效、电能质量、告警、资产健康和预测维护连接到客户现有工业数据体系。",
+            "playbook": "围绕东方盛虹流程工业智能大模型，提出“电气数据接入包”：明确采集哪些断路器、仪表、温度、弧光、电能质量和告警数据，由PME/PO形成报表和API/接口边界。",
+            "output": "电气数据接入清单、PME/PO场景图、告警分级、API/接口边界",
+            "source_ids": ["SE1", "SE2", "SE3", "SE7"],
+        },
+        "行业政策变化": {
+            "stage": "战略沟通 -> 复盘复制",
+            "advantage": "施耐德在能源管理、ISO 50001、能效审计、碳与能源数据、Power and Process低碳场景上有完整叙事，能把政策合规变成绿色工厂和能效项目。",
+            "playbook": "对接安环/能源管理/ESG团队，先做能源与电气健康基线，再选择一个绿色工厂或公辅系统做试点；输出合规报表、能效改善和可复制样板，而不是只卖设备。",
+            "output": "能源基线、绿色工厂电气改造清单、合规报表、样板项目复盘",
+            "source_ids": ["SE4", "SE2", "ISO1", "KB1"],
+        },
+    }
+
+
+def _petrochem_pain_opportunities(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    risk = _petrochem_detail(data, "risk_stability", "risk")
+    efficiency_pain = _petrochem_detail(data, "pain_business_efficiency", "pain_business")
+    quality_pain = _petrochem_detail(data, "pain_business_quality", "pain_technical")
+    supply_chain_pain = _petrochem_detail(data, "pain_business_supply_chain", "procurement_mode") + "；大型基地备件、进口设备、本地服务和EPC多包接口复杂。"
+    details = data.get("public_details") or {}
+    talent_pain = str(
+        details.get(
+            "pain_business_talent",
+            "电仪、数字化、能源管理和安全运维需要复合型人才，项目扩建和装置爬坡会放大人才缺口",
+        )
+    )
+    playbook = _schneider_pain_playbook()
+    return [
+        {
+            "category": "业务痛点",
+            "rows": [
+                _pain_row("生产效率痛点", efficiency_pain, "把降本增效从“价格”转成“停机损失、能耗、检修效率和开车保障”的TCO比较", "生产过程中效率低下的环节", _source_union(src, playbook["生产效率痛点"]["source_ids"]), playbook["生产效率痛点"]),
+                _pain_row("质量管控痛点", quality_pain, "把质量管控从“出厂合格”升级为“柜体/MCC可靠性、热风险、弧光风险、FAT/SAT和长期运行证据”", "质量问题的频发点", _source_union(src, playbook["质量管控痛点"]["source_ids"]), playbook["质量管控痛点"]),
+                _pain_row("供应链痛点", supply_chain_pain, "建立业主-EPC-设计院-盘厂-自动化包商共同认可的BOM、交付边界、备件和数据接口闭环", "供货、库存、物流等问题", _source_union(src, playbook["供应链痛点"]["source_ids"]), playbook["供应链痛点"]),
+                _pain_row("人才痛点", talent_pain, "用研修院打法把客户团队从传统电仪维护带到智能配电、能效、HSE和预测维护的项目化能力", "人才招聘、培养、流失问题", _source_union(src if "pain_business_talent" in details else [], playbook["人才痛点"]["source_ids"]), playbook["人才痛点"]),
+            ],
+        },
+        {
+            "category": "技术痛点",
+            "rows": [
+                _pain_row("设计能力痛点", _petrochem_detail(data, "decision_factors"), "共建业主标准、典型单线图、BOM模板、保护配合和通信架构", "设计效率、标准化程度问题", _source_union(src, playbook["设计能力痛点"]["source_ids"]), playbook["设计能力痛点"]),
+                _pain_row("技术成本痛点", _petrochem_detail(data, "pain_market"), "用TCO、能效收益、故障损失规避和检修效率解释施耐德价值", "成本优化能力不足", _source_union(src, playbook["技术成本痛点"]["source_ids"]), playbook["技术成本痛点"]),
+                _pain_row("技术人才痛点", "智能化、低碳和高可靠电气系统需要跨专业能力，客户内部和承包商能力差异会影响落地", "提供现场诊断、培训、联合方案设计和样板间/试点工程", "技术人员能力不足", playbook["技术人才痛点"]["source_ids"], playbook["技术人才痛点"]),
+            ],
+        },
+        {
+            "category": "市场痛点",
+            "rows": [
+                _pain_row("市场竞争压力", risk, "聚焦关键负载、高可靠、智能化和服务能力，避开单纯低价竞争", "来自竞品的压力", _source_union(src, playbook["市场竞争压力"]["source_ids"]), playbook["市场竞争压力"]),
+                _pain_row("客户需求变化", _petrochem_detail(data, "electrical_needs"), "以智能配电、能效管理、服务框架和电气资产健康切入", "客户需求升级带来的挑战", _source_union(src, playbook["客户需求变化"]["source_ids"]), playbook["客户需求变化"]),
+                _pain_row("行业政策变化", _petrochem_detail(data, "green", "green"), "准备合规、节能、国产化适配和关键场景可靠性材料", "政策调整带来的影响", _source_union(src, playbook["行业政策变化"]["source_ids"]), playbook["行业政策变化"]),
+            ],
+        },
+    ]
+
+
+def _petrochem_risk_assessment(data: dict[str, Any]) -> list[dict[str, Any]]:
+    src = _petrochem_detail_src(data)
+    return [
+        {
+            "category": "经营风险",
+            "rows": [
+                _risk_assessment_row("财务风险", _petrochem_detail(data, "risk_finance", "finance"), "资金链、负债、回款风险", src),
+                _risk_assessment_row("法律风险", "需补查国家企业信用信息公示系统、信用中国、裁判文书、环保处罚和项目环评验收；公开资料仅能提供项目/公告侧线索", "诉讼、行政处罚记录", []),
+                _risk_assessment_row("经营稳定性", _petrochem_detail(data, "risk_stability", "risk"), "是否存在经营异常", src),
+            ],
+        },
+        {
+            "category": "信用风险",
+            "rows": [
+                _risk_assessment_row("付款信用", "公开资料不披露对施耐德付款信用，需应收账款、授信、逾期、账期和争议记录补齐", "历史付款是否准时", []),
+                _risk_assessment_row("合同履约", "需按施耐德历史项目、EPC交付节点、验收、变更、索赔和服务工单评估履约质量", "合同履约情况", []),
+                _risk_assessment_row("售后纠纷", "需补齐设备故障、质量投诉、备件短缺、现场响应和售后争议记录", "售后问题处理情况", []),
+            ],
+        },
+    ]
+
+
+SUPPLEMENT_INTERNAL_FIELDS = {
+    "合作年限",
+    "合作模式",
+    "历史采购额",
+    "采购增长率",
+    "主要采购产品",
+    "授权柜体型号",
+    "合作满意度",
+    "竞品采购比例",
+    "竞品使用原因",
+    "竞品优势感知",
+    "竞品劣势感知",
+    "价格水平",
+    "价格敏感度",
+    "数字化预算",
+    "付款信用",
+    "合同履约",
+    "售后纠纷",
+    "客户满意度",
+    "客户粘性",
+    "采购负责人",
+    "技术负责人",
+    "生产负责人",
+    "销售负责人",
+    "采购决策流程",
+    "技术选型流程",
+    "决策周期",
+    "决策影响因素",
+    "生产周期",
+    "准时交付率",
+    "质量合格率",
+    "设计软件使用",
+    "技术合作方",
+    "专利数量",
+    "年产能",
+    "现金流状况",
+    "设备更新需求",
+}
+
+
+SUPPLEMENT_STRONG_GAP_PATTERN = re.compile(
+    r"待核验|未披露|无法确认|不能确认|需客户|需内部|需访谈|需.*补齐|待补|未公开|未直接披露|无法.*确认"
+)
+SUPPLEMENT_SOFT_GAP_PATTERN = re.compile(r"需.*核验|建议|推测|待.*复核|仍需|需.*确认")
+
+
+def _customer_supplement_plan(customer: str) -> dict[str, Any]:
+    rows = _structured_field_lookup(customer)
+    items: list[dict[str, Any]] = []
+    module_summary: list[dict[str, Any]] = []
+    total_counts = {"较完整": 0, "部分完整": 0, "需补充": 0}
+    for module, fields in fields_by_module().items():
+        counts = {"较完整": 0, "部分完整": 0, "需补充": 0}
+        for field in fields:
+            row = rows.get(field.field)
+            status = _supplement_status(field, row)
+            counts[status] += 1
+            total_counts[status] += 1
+            if status == "较完整":
+                continue
+            items.append(
+                {
+                    "module": field.module,
+                    "module_name": _module_display_name(field.module),
+                    "category": field.category,
+                    "field": field.field,
+                    "description": field.description,
+                    "status": status,
+                    "priority": _field_priority(field),
+                    "owner": _supplement_owner(field),
+                    "data_source": _supplement_data_source(field),
+                    "action": _supplement_action(field, row, status),
+                    "current_value": _supplement_current_value(row),
+                    "source_ids": (row or {}).get("source_ids", []),
+                }
+            )
+        module_summary.append(
+            {
+                "module": module,
+                "name": _module_display_name(module),
+                "field_count": len(fields),
+                "complete_count": counts["较完整"],
+                "partial_count": counts["部分完整"],
+                "gap_count": counts["需补充"],
+            }
+        )
+    items.sort(key=lambda item: (_supplement_priority_rank(item["priority"]), _supplement_status_rank(item["status"]), item["module"], item["category"]))
+    return {
+        "counts": total_counts,
+        "module_summary": module_summary,
+        "items": items,
+    }
+
+
+def _structured_field_lookup(customer: str) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in _customer_basic_info(customer):
+        rows[row["field"]] = row
+    for row in _customer_certifications(customer):
+        rows[row["field"]] = row
+    for group in _customer_scale_finance(customer).values():
+        for row in group:
+            rows[row["field"]] = row
+    for section_func in (
+        _customer_business_capability,
+        _customer_supply_procurement,
+        _customer_resources,
+        _customer_sales_market,
+        _customer_org_decision,
+        _customer_strategy_needs,
+        _customer_pain_opportunities,
+        _customer_risk_assessment,
+    ):
+        for section in section_func(customer):
+            for row in section.get("rows", []):
+                rows[row["field"]] = row
+    return rows
+
+
+def _supplement_status(field: InsightField, row: dict[str, Any] | None) -> str:
+    if not row:
+        return "需补充"
+    value = _supplement_current_value(row)
+    source_ids = row.get("source_ids", [])
+    if not value or value.strip() in {"待核验", "公开资料未披露", "暂无"}:
+        return "需补充"
+    if field.field in SUPPLEMENT_INTERNAL_FIELDS:
+        return "部分完整" if source_ids and not value.startswith("公开资料未披露") else "需补充"
+    if SUPPLEMENT_STRONG_GAP_PATTERN.search(value):
+        return "部分完整" if source_ids else "需补充"
+    if SUPPLEMENT_SOFT_GAP_PATTERN.search(value):
+        return "部分完整"
+    return "较完整" if source_ids else "部分完整"
+
+
+def _supplement_current_value(row: dict[str, Any] | None) -> str:
+    if not row:
+        return ""
+    return str(row.get("value") or row.get("pain") or "")
+
+
+def _supplement_owner(field: InsightField) -> str:
+    if field.module.startswith("3."):
+        return "施耐德销售/渠道/ERP/CRM"
+    if field.module.startswith("6."):
+        return "客户经理/关键人访谈"
+    if field.module.startswith("8."):
+        return "客户访谈/技术服务团队"
+    if field.module.startswith("9."):
+        return "商务信用/法务/售后"
+    if field.category in {"资质认证", "企业规模", "财务状况"}:
+        return "公开研究/客户经理/客户资料"
+    if field.field in SUPPLEMENT_INTERNAL_FIELDS:
+        return "施耐德内部系统/客户访谈"
+    return "公开研究/客户经理"
+
+
+def _supplement_data_source(field: InsightField) -> str:
+    if field.module.startswith("3."):
+        return "CRM/ERP订单、渠道授权系统、项目BOM、赢丢单复盘、采购访谈"
+    if field.module.startswith("6."):
+        return "客户经理拜访纪要、组织架构图、关键人访谈、项目复盘"
+    if field.module.startswith("9."):
+        return "应收账款、授信、逾期、法务记录、售后服务工单、质量投诉"
+    if field.category == "资质认证":
+        return "客户证书清单、CCC/CQC/型式试验、资质平台、施耐德授权系统"
+    if field.category == "财务状况":
+        return "年报/审计报表、授信材料、工商年报、内部信用资料"
+    if field.category == "企业规模":
+        return "官网/招聘资料、环评/项目资料、现场走访、客户访谈"
+    if field.module.startswith("4."):
+        return "项目清单、客户访谈、销售台账、公开中标信息"
+    if field.module.startswith("7."):
+        return "官网/公告/ESG、技改项目、战略访谈、预算/项目计划"
+    return "官网、政府/公共资源、行业平台、招聘资料、客户访谈"
+
+
+def _supplement_action(field: InsightField, row: dict[str, Any] | None, status: str) -> str:
+    prefix = "补齐" if status == "需补充" else "核验"
+    if field.module.startswith("3."):
+        return f"{prefix}施耐德交易、授权、BOM、竞品和满意度数据，形成客户采购画像。"
+    if field.module.startswith("6."):
+        return f"{prefix}关键人姓名、角色权限、采购/技术决策流程和决策周期。"
+    if field.module.startswith("9."):
+        return f"{prefix}付款、履约、法务、售后和质量闭环记录，判断经营风险。"
+    if field.category == "资质认证":
+        return f"{prefix}证书编号、等级、有效期、授权范围和对应法人主体。"
+    if field.category in {"企业规模", "财务状况"}:
+        return f"{prefix}{field.field}的最新口径、年度变化和证据来源。"
+    if field.module.startswith("4."):
+        return f"{prefix}头部客户、客户集中度、复购和满意度，补强客户资源画像。"
+    if field.module.startswith("7."):
+        return f"{prefix}战略计划、数字化预算、双碳/ESG和设备更新项目。"
+    if field.module.startswith("8."):
+        return f"{prefix}真实业务痛点、技术痛点和施耐德可切入机会。"
+    return f"{prefix}{field.field}，补充可追溯证据和客户访谈结论。"
+
+
+def _supplement_priority_rank(priority: str) -> int:
+    return {"P1": 0, "P2": 1, "P3": 2}.get(priority, 9)
+
+
+def _supplement_status_rank(status: str) -> int:
+    return {"需补充": 0, "部分完整": 1, "较完整": 2}.get(status, 9)
 
 
 def _portrait_top_opportunities(opportunities: list[dict[str, str]]) -> list[str]:

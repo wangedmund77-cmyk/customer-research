@@ -24,6 +24,19 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertGreaterEqual(len(FRAMEWORK), 100)
         self.assertIn("3. 供应链与采购模块", module_names())
 
+    def test_framework_catalog_exposes_excel_fields(self):
+        catalog = _framework_catalog()
+        nested_fields = [
+            field
+            for module in catalog
+            for category in module["categories"]
+            for field in category["fields"]
+        ]
+        self.assertEqual(len(nested_fields), len(FRAMEWORK))
+        self.assertEqual(catalog[0]["categories"][0]["name"], "企业基本信息")
+        self.assertEqual(catalog[0]["categories"][0]["fields"][0]["field"], "企业名称")
+        self.assertEqual(catalog[-1]["categories"][-1]["fields"][-1]["field"], "售后纠纷")
+
     def test_prompt_includes_internal_gap_rule(self):
         prompt = render_research_prompt("浙江正泰电器股份有限公司", 2026)
         self.assertIn("待内部补充/需访谈核验", prompt)
@@ -49,6 +62,21 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertTrue(_is_chint_customer("CHINT Electrics"))
         self.assertFalse(_is_chint_customer("某某成套设备有限公司"))
 
+    def test_chint_pain_opportunities_include_competitor_playbook(self):
+        project = CustomerProject(id="demo", customer="浙江正泰电器股份有限公司", year=2026)
+        dashboard = _build_insight_dashboard(project)
+        pain_rows = {row["field"]: row for section in dashboard["pain_opportunities"] for row in section["rows"]}
+
+        self.assertIn("强势本土竞品", pain_rows["市场竞争压力"]["pain"])
+        self.assertIn("BlokSeT", pain_rows["质量管控痛点"]["schneider_advantage"])
+        self.assertIn("Power Commission", pain_rows["生产效率痛点"]["schneider_advantage"])
+        self.assertIn("设计院/EPC", pain_rows["设计能力痛点"]["schneider_playbook"])
+        self.assertIn("低价可替代", pain_rows["市场竞争压力"]["schneider_playbook"])
+        self.assertIn("TCO", pain_rows["技术成本痛点"]["schneider_playbook"])
+        self.assertIn("SE5", pain_rows["质量管控痛点"]["source_ids"])
+        self.assertIn("SE7", pain_rows["市场竞争压力"]["source_ids"])
+        self.assertIn("KB1", pain_rows["人才痛点"]["source_ids"])
+
     def test_zhonghuan_customer_detection(self):
         self.assertTrue(_is_zhonghuan_customer("中环电气集团"))
         self.assertTrue(_is_zhonghuan_customer("江苏中环电气集团有限公司"))
@@ -61,7 +89,7 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertFalse(_is_tianyu_customer("浙江天宇药业股份有限公司"))
 
     def test_markdown_report_can_be_written_as_docx(self):
-        markdown = """# 测试客户深度客户洞察报告
+        markdown = """# 测试企业深度企业洞察报告
 
 ## 0. 高层摘要
 
@@ -89,7 +117,7 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
                 self.assertIn("word/_rels/document.xml.rels", names)
                 self.assertIn("word/numbering.xml", names)
                 document_xml = archive.read("word/document.xml").decode("utf-8")
-                self.assertIn("深度客户洞察报告", document_xml)
+                self.assertIn("深度企业洞察报告", document_xml)
                 self.assertIn('w:pStyle w:val="TocTitle"', document_xml)
                 self.assertIn('w:pStyle w:val="Heading1"', document_xml)
                 self.assertIn("<w:tbl>", document_xml)
@@ -110,7 +138,7 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertIn("【ZH9】", linked)
 
     def test_chinese_attachment_header_has_ascii_fallback(self):
-        header = _attachment_header("福州天宇电气股份有限公司_深度客户洞察报告.docx")
+        header = _attachment_header("福州天宇电气股份有限公司_深度企业洞察报告.docx")
         self.assertIn("filename=download.docx", header)
         self.assertIn("filename*=UTF-8''", header)
 
@@ -336,6 +364,36 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         fields = {row["field"] for row in dashboard["framework_matrix"]}
         self.assertIn("施耐德授权等级", fields)
         self.assertIn("付款信用", fields)
+
+    def test_shenghong_dashboard_uses_switchgear_ka_summary(self):
+        project = CustomerProject(id="demo", customer="江苏东方盛虹股份有限公司 / 东方盛虹", year=2026)
+        dashboard = _build_insight_dashboard(project)
+        summary = dashboard["competitor_summary"]
+        self.assertEqual(summary["chain_heading"], "施耐德机会链路")
+        self.assertIn("企业洞察摘要", summary["title"])
+        self.assertNotIn("method_note", summary)
+        self.assertIn("14.32亿元", summary["one_sentence"])
+        self.assertIn("SH7", summary["substitution_chain"][0]["source_ids"])
+        self.assertIn("SH9", summary["module_takeaways"][1]["source_ids"])
+        self.assertIn("盛虹流程工业智能大模型平台", dashboard["strategy_needs"][1]["rows"][0]["value"])
+        self.assertIn("SH4", summary["substitution_chain"][2]["source_ids"])
+        pain_rows = {row["field"]: row for section in dashboard["pain_opportunities"] for row in section["rows"]}
+        self.assertIn("营业收入1,255.87亿元", pain_rows["生产效率痛点"]["pain"])
+        self.assertIn("扣非净利润-5.43亿元", pain_rows["生产效率痛点"]["pain"])
+        self.assertIn("2026年一季度净利润和经营现金流显著修复", pain_rows["生产效率痛点"]["pain"])
+        self.assertIn("1600万吨/年炼油", pain_rows["质量管控痛点"]["pain"])
+        self.assertIn("425万立方仓储", pain_rows["质量管控痛点"]["pain"])
+        self.assertIn("DCS、OTS", pain_rows["供应链痛点"]["pain"])
+        self.assertIn("设备故障", pain_rows["人才痛点"]["pain"])
+        self.assertIn("SH6", pain_rows["质量管控痛点"]["source_ids"])
+        self.assertIn("EcoStruxure Power and Process", pain_rows["生产效率痛点"]["schneider_advantage"])
+        self.assertIn("TCO", pain_rows["生产效率痛点"]["schneider_playbook"])
+        self.assertIn("BlokSeT", pain_rows["质量管控痛点"]["schneider_advantage"])
+        self.assertIn("FAT/SAT", pain_rows["质量管控痛点"]["schneider_playbook"])
+        self.assertIn("四方BOM冻结会", pain_rows["供应链痛点"]["schneider_playbook"])
+        self.assertIn("SE5", pain_rows["质量管控痛点"]["source_ids"])
+        self.assertIn("SE7", pain_rows["人才痛点"]["source_ids"])
+        self.assertEqual(len(dashboard["framework_matrix"]), len(FRAMEWORK))
 
 
 if __name__ == "__main__":

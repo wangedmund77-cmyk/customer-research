@@ -1,4 +1,4 @@
-"""CLI for switchgear customer insight report projects."""
+"""CLI for switchgear enterprise insight report projects."""
 
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ from .report_writer import (
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="switchgear-customer-insight",
-        description="生成施耐德盘厂大客户深度洞察报告项目材料。",
+        prog="switchgear-enterprise-insight",
+        description="生成施耐德盘厂企业深度洞察研究项目材料。",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = subparsers.add_parser("init", help="按客户名称初始化洞察项目目录")
+    init_parser = subparsers.add_parser("init", help="按企业名称初始化洞察研究项目目录")
     _add_customer_args(init_parser)
-    init_parser.add_argument("--out", default="", help="输出目录；默认 outputs/customer_insights/<客户名>")
+    init_parser.add_argument("--out", default="", help="输出目录；默认 outputs/enterprise_insights/<企业名>")
 
     prompt_parser = subparsers.add_parser("prompt", help="只生成可交给大模型的研究提示词")
     _add_customer_args(prompt_parser)
@@ -44,12 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     web_parser.add_argument("--host", default="127.0.0.1", help="监听地址")
     web_parser.add_argument("--port", type=int, default=8790, help="监听端口")
 
-    subparsers.add_parser("framework", help="列出当前盘厂客户洞察模块")
+    subparsers.add_parser("framework", help="列出当前盘厂企业洞察模块")
 
     args = parser.parse_args(argv)
 
     if args.command == "init":
-        out = args.out or str(Path("outputs") / "customer_insights" / slugify_customer_name(args.customer))
+        out = args.out or str(Path("outputs") / "enterprise_insights" / slugify_customer_name(args.customer))
         files = write_customer_project(args.customer, out, args.year)
         for path in files:
             print(path)
@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _add_customer_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--customer", required=True, help="客户全称，例如：浙江正泰电器股份有限公司")
+    parser.add_argument("--customer", required=True, help="企业全称，例如：浙江正泰电器股份有限公司")
     parser.add_argument("--year", type=int, default=date.today().year, help="报告年度，默认当前年份")
 
 

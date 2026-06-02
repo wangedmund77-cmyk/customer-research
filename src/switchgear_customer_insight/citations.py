@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 
-CITATION_PATTERN = re.compile(r"【([A-Za-z]{1,4}\d+)】")
+CITATION_PATTERN = re.compile(r"【([A-Za-z]{1,5}\d+)】")
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ def parse_source_registry(markdown: str) -> dict[str, SourceReference]:
         if all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells):
             continue
         source_id = cells[0]
-        if not re.fullmatch(r"[A-Za-z]{1,4}\d+", source_id):
+        if not re.fullmatch(r"[A-Za-z]{1,5}\d+", source_id):
             continue
         references[source_id] = SourceReference(
             id=source_id,

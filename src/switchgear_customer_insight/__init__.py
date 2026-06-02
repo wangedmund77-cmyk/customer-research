@@ -1,4 +1,4 @@
-"""Switchgear customer insight report generator."""
+"""Switchgear enterprise insight report generator."""
 
 __all__ = ["__version__"]
 

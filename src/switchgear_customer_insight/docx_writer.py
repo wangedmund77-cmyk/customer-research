@@ -125,7 +125,7 @@ def _parse_markdown_table(lines: Iterable[str]) -> list[list[str]]:
 
 
 def _report_metadata(blocks: list[Block]) -> dict[str, str | list[tuple[str, str]]]:
-    title = "盘厂大客户深度洞察报告"
+    title = "盘厂企业深度洞察报告"
     front_items: list[tuple[str, str]] = []
     for kind, payload in blocks:
         if kind == "heading":
@@ -141,7 +141,7 @@ def _report_metadata(blocks: list[Block]) -> dict[str, str | list[tuple[str, str
     generated = _front_value(front_items, "生成日期") or datetime.now().strftime("%Y-%m-%d")
     version = _front_value(front_items, "报告版本") or "公开资料版"
     service = _front_value(front_items, "服务对象") or "施耐德电气盘厂客户部"
-    short_title = f"{customer}洞察报告" if customer else "客户洞察报告"
+    short_title = f"{customer}洞察报告" if customer else "企业洞察报告"
     return {
         "title": title,
         "customer": customer,
@@ -168,7 +168,7 @@ def _front_value(items: list[tuple[str, str]], key: str) -> str:
 
 
 def _customer_from_title(title: str) -> str:
-    return re.sub(r"(深度)?客户?洞察报告$", "", title).strip() or title
+    return re.sub(r"(深度)?(客户|企业)?洞察报告$", "", title).strip() or title
 
 
 def _document_xml(
@@ -207,7 +207,7 @@ def _cover_page(metadata: dict[str, str | list[tuple[str, str]]], source_relatio
     front_items = metadata["front_items"]
     assert isinstance(front_items, list)
     meta_rows = [
-        ["客户名称", str(metadata["customer"])],
+        ["企业名称", str(metadata["customer"])],
         ["服务对象", str(metadata["service"])],
         ["报告版本", str(metadata["version"])],
         ["生成日期", str(metadata["generated"])],
@@ -215,14 +215,14 @@ def _cover_page(metadata: dict[str, str | list[tuple[str, str]]], source_relatio
     extra_items = [[key, value] for key, value in front_items if key in {"关键限制", "用户输入名称"}]
     meta_rows.extend(extra_items[:2])
     return [
-        _paragraph("Panel Builder Insight", style="CoverKicker", source_relationships=source_relationships),
+        _paragraph("Enterprise Insight Research", style="CoverKicker", source_relationships=source_relationships),
         _paragraph(str(metadata["customer"]), style="CoverTitle", source_relationships=source_relationships),
-        _paragraph("深度客户洞察报告", style="CoverSubtitle", source_relationships=source_relationships),
-        _paragraph("Schneider Electric · 盘厂大客户研究", style="CoverByline", source_relationships=source_relationships),
+        _paragraph("深度企业洞察报告", style="CoverSubtitle", source_relationships=source_relationships),
+        _paragraph("Schneider Electric · 盘厂企业研究", style="CoverByline", source_relationships=source_relationships),
         _spacer_paragraph(420),
         _key_value_table(meta_rows, source_relationships),
         _spacer_paragraph(280),
-        _callout("使用提示", "本文档由客户洞察工作台根据既有研究报告生成，公开资料结论应结合施耐德内部采购、授权、项目和客户访谈数据复核。", source_relationships),
+        _callout("使用提示", "本文档由企业洞察研究工作台根据既有研究报告生成，公开资料结论应结合施耐德内部采购、授权、项目和企业访谈数据复核。", source_relationships),
         _page_break(),
     ]
 
@@ -608,8 +608,8 @@ def _core_properties_xml(title: str) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <dc:title>{escape(title)}</dc:title>
-  <dc:creator>Switchgear Customer Insight</dc:creator>
-  <cp:lastModifiedBy>Switchgear Customer Insight</cp:lastModifiedBy>
+  <dc:creator>Switchgear Enterprise Insight</dc:creator>
+  <cp:lastModifiedBy>Switchgear Enterprise Insight</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">{created}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">{created}</dcterms:modified>
 </cp:coreProperties>"""
@@ -618,5 +618,5 @@ def _core_properties_xml(title: str) -> str:
 def _app_properties_xml() -> str:
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>Switchgear Customer Insight</Application>
+  <Application>Switchgear Enterprise Insight</Application>
 </Properties>"""

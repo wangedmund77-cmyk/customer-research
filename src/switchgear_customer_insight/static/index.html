@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>盘厂大客户洞察工作台</title>
+    <title>盘厂企业洞察研究工作台</title>
     <link rel="stylesheet" href="/static/app.css" />
   </head>
   <body>
@@ -13,40 +13,86 @@
           <div class="brand-block">
             <div class="brand-mark">SE</div>
             <div>
-              <p class="eyebrow">Panel Builder Insight</p>
-              <h1>盘厂大客户洞察</h1>
+              <p class="eyebrow">Enterprise Insight Research</p>
+              <h1>盘厂企业洞察研究</h1>
             </div>
           </div>
           <form class="customer-form" id="customerForm">
             <label class="customer-name">
-              <span>大客户名称</span>
+              <span>企业名称</span>
               <select id="customerSelect" name="customer" required>
                 <option value="浙江正泰电器股份有限公司">浙江正泰电器股份有限公司</option>
                 <option value="江苏中环电气集团有限公司">江苏中环电气集团有限公司</option>
                 <option value="福州天宇电气股份有限公司">福州天宇电气股份有限公司</option>
+                <option value="中国石化">中国石化</option>
+                <option value="中国石油">中国石油</option>
+                <option value="中国海油/中海壳牌">中国海油/中海壳牌</option>
+                <option value="巴斯夫湛江">巴斯夫湛江</option>
+                <option value="埃克森美孚惠州">埃克森美孚惠州</option>
+                <option value="万华化学">万华化学</option>
+                <option value="荣盛石化/浙石化">荣盛石化/浙石化</option>
+                <option value="恒力石化">恒力石化</option>
+                <option value="江苏东方盛虹股份有限公司 / 东方盛虹">江苏东方盛虹股份有限公司 / 东方盛虹</option>
+                <option value="宝丰能源/卫星化学">宝丰能源/卫星化学</option>
+                <option value="华锦阿美">华锦阿美</option>
               </select>
             </label>
           </form>
         </section>
 
-        <section class="view-tabs" aria-label="客户洞察视图">
-          <button class="view-tab is-active" data-view="dashboard" type="button">客户洞察</button>
+        <section class="view-tabs" aria-label="企业洞察视图">
+          <button class="view-tab is-active" data-view="summary" type="button">摘要</button>
+          <button class="view-tab" data-view="dashboard" type="button">企业洞察</button>
+          <button class="view-tab" data-view="supplement" type="button">信息补充</button>
+          <button class="view-tab" data-view="sources" type="button">参考数据源</button>
           <button class="view-tab" data-view="framework" type="button">框架模块</button>
         </section>
 
         <section class="content-grid">
-          <article class="main-panel" id="dashboardView">
+          <article class="main-panel" id="summaryView">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Customer 360</p>
-                <h2>客户洞察看板</h2>
+                <p class="eyebrow">Executive Brief</p>
+                <h2>摘要</h2>
+              </div>
+            </div>
+            <div id="summaryBoard" class="summary-board empty-state">选择企业后展示摘要。</div>
+          </article>
+
+          <article class="main-panel is-hidden" id="dashboardView">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Enterprise 360</p>
+                <h2>企业洞察看板</h2>
               </div>
               <div class="download-actions">
                 <a id="dashboardDownloadWord" class="utility-link is-disabled" href="#" target="_blank" rel="noreferrer">下载 Word</a>
                 <a id="dashboardDownloadReport" class="utility-link is-disabled" href="#" target="_blank" rel="noreferrer">下载 Markdown</a>
               </div>
             </div>
-            <div id="dashboardBoard" class="dashboard-board empty-state">选择客户后生成 360 洞察看板。</div>
+            <div id="dashboardBoard" class="dashboard-board empty-state">选择企业后生成 360 洞察看板。</div>
+          </article>
+
+          <article class="main-panel is-hidden" id="supplementView">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Data Completion</p>
+                <h2>信息补充清单</h2>
+              </div>
+              <strong id="supplementCount" class="coverage-pill">加载中</strong>
+            </div>
+            <div id="supplementBoard" class="supplement-board empty-state">选择企业后展示需补充信息。</div>
+          </article>
+
+          <article class="main-panel is-hidden" id="sourceView">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Reference Sources</p>
+                <h2>参考数据源</h2>
+              </div>
+              <strong id="sourceCount" class="coverage-pill">加载中</strong>
+            </div>
+            <div id="sourceBoard" class="reference-source-board empty-state">选择企业后展示数据来源目录。</div>
           </article>
 
           <article class="main-panel is-hidden" id="frameworkView">
@@ -58,6 +104,7 @@
               <strong id="frameworkCount" class="coverage-pill">加载中</strong>
             </div>
             <ol id="moduleList" class="framework-module-list"></ol>
+            <div id="frameworkDetail" class="framework-detail empty-state">选择框架模块后展示 Excel 大纲字段。</div>
           </article>
         </section>
       </section>
