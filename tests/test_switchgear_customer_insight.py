@@ -364,6 +364,28 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         fields = {row["field"] for row in dashboard["framework_matrix"]}
         self.assertIn("施耐德授权等级", fields)
         self.assertIn("付款信用", fields)
+        summary = dashboard["competitor_summary"]
+        self.assertEqual(summary["chain_heading"], "施耐德项目经营链路")
+        self.assertIn("中环电气企业洞察摘要", summary["title"])
+        self.assertIn("项目型重点盘厂客户", summary["one_sentence"])
+        self.assertIn("Prisma E", summary["one_sentence"])
+        self.assertIn("MVnex", summary["one_sentence"])
+        self.assertIn("BlokSeT", summary["one_sentence"])
+        self.assertIn("标准BOM", summary["module_takeaways"][7]["takeaway"])
+        self.assertIn("ZH17", summary["module_takeaways"][6]["source_ids"])
+        self.assertIn("ZH16", summary["substitution_chain"][0]["source_ids"])
+
+        scale_rows = {row["field"]: row for row in dashboard["scale_finance"]["enterprise_scale"]}
+        self.assertIn("约280人", scale_rows["员工总数"]["value"])
+        self.assertIn("数控多位高速转塔冲床", scale_rows["生产人员数量"]["value"])
+        business_rows = {row["field"]: row for section in dashboard["business_capability"] for row in section["rows"]}
+        self.assertIn("南京国博电子", business_rows["代表性项目"]["value"])
+        self.assertIn("数控电液式剪板机", business_rows["生产设备水平"]["value"])
+        strategy_rows = {row["field"]: row for section in dashboard["strategy_needs"] for row in section["rows"]}
+        self.assertIn("省三星级上云企业", strategy_rows["数字化现状"]["value"])
+        pain_rows = {row["field"]: row for section in dashboard["pain_opportunities"] for row in section["rows"]}
+        self.assertIn("项目类型模板", pain_rows["生产效率痛点"]["opportunity"])
+        self.assertIn("FAT/SAT", pain_rows["质量管控痛点"]["opportunity"])
 
     def test_shenghong_dashboard_uses_switchgear_ka_summary(self):
         project = CustomerProject(id="demo", customer="江苏东方盛虹股份有限公司 / 东方盛虹", year=2026)
