@@ -1494,7 +1494,8 @@ button,
 
 .executive-judgement-card small,
 .substitution-step small,
-.module-takeaway-card small {
+.module-takeaway-card small,
+.executive-action-row small {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;

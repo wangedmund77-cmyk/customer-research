@@ -103,6 +103,25 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertIn("国产低压龙头", first_takeaway["strategy_focus"])
         self.assertIn("证据颗粒度", summary["module_takeaways"][7]["sales_focus"])
         self.assertIn("BOM", summary["module_takeaways"][7]["sales_focus"])
+        self.assertEqual(len(summary["actions"]), 5)
+        action_titles = [item["action"] for item in summary["actions"]]
+        self.assertEqual(
+            action_titles,
+            [
+                "先做主体边界和项目角色分层",
+                "建立共同终端项目地图",
+                "抢占规格和BOM影响节点",
+                "重做高价值场景解决方案包",
+                "建立正泰竞争监测与复盘机制",
+            ],
+        )
+        self.assertIn("主体关系边界", summary["actions"][0]["detail"])
+        self.assertIn("共同终端客户重叠", summary["actions"][1]["detail"])
+        self.assertIn("BOM控制权", summary["actions"][2]["detail"])
+        self.assertIn("Power Commission", summary["actions"][3]["detail"])
+        self.assertIn("组合型风险", summary["actions"][4]["detail"])
+        self.assertIn("S21", summary["actions"][1]["source_ids"])
+        self.assertIn("SE8", summary["actions"][2]["source_ids"])
         self.assertIn("SE5", pain_rows["质量管控痛点"]["source_ids"])
         self.assertIn("SE7", pain_rows["市场竞争压力"]["source_ids"])
         self.assertIn("KB1", pain_rows["人才痛点"]["source_ids"])

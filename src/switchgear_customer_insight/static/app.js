@@ -393,6 +393,7 @@ function renderExecutiveActions(items, summary = {}) {
                 <div>
                   <strong>${escapeHtml(item.action)}</strong>
                   <span>${escapeHtml(item.detail)}</span>
+                  <small>${renderSourceIds(item.source_ids || [])}</small>
                 </div>
                 <em>${escapeHtml(item.owner)}</em>
               </article>
