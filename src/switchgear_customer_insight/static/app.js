@@ -385,17 +385,6 @@ function renderDashboard(project) {
     ${renderModuleOverview(dashboard, selectedIndex)}
     ${renderProjectTaggingPanel(dashboard.project_tagging || {})}
     ${renderSelectedModulePanel(dashboard, portrait, selectedIndex)}
-    <section class="customer-360-layout">
-      <aside class="customer-dossier-column">
-        ${renderCustomerDossier(project, dashboard, portrait)}
-      </aside>
-      <main class="insight-center-column">
-        ${renderInsightCardStack(dashboard, portrait)}
-      </main>
-      <aside class="action-risk-column">
-        ${renderActionRiskRail(dashboard, portrait)}
-      </aside>
-    </section>
   `;
 }
 
@@ -1475,6 +1464,115 @@ function renderSupplyProcurementRow(item) {
       <strong>${escapeHtml(item.field)}</strong>
       <span>${escapeHtml(item.value)}</span>
       <em>${escapeHtml(item.description || "")}${renderSourceIds(item.source_ids || [])}</em>
+      ${renderCompetitorSolutionComparison(item.comparison_rows || [])}
+      ${renderSupplierSegmentTable(item.supplier_segments || [])}
+      ${renderSupplyEvidenceTable(item.evidence_rows || [], item.evidence_title || "", item.evidence_subtitle || "")}
+    </div>
+  `;
+}
+
+function renderCompetitorSolutionComparison(rows) {
+  if (!rows.length) return "";
+  return `
+    <div class="competitor-solution-table-wrap">
+      <div class="competitor-solution-title">
+        <strong>业务需求导向竞品方案对比</strong>
+        <span>以该企业实际项目需求比较施耐德与主要竞争对手</span>
+      </div>
+      <table class="competitor-solution-table">
+        <thead>
+          <tr>
+            <th>业务需求</th>
+            <th>采购/项目触发</th>
+            <th>施耐德方案与产品</th>
+            <th>竞争对手方案与产品</th>
+            <th>施耐德优势</th>
+            <th>施耐德劣势/需防守点</th>
+            <th>引用</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.business_need || "")}</td>
+              <td>${escapeHtml(row.demand_trigger || "")}</td>
+              <td>${escapeHtml(row.schneider_solution || "")}</td>
+              <td>${escapeHtml(row.competitor_solution || "")}</td>
+              <td>${escapeHtml(row.schneider_strength || "")}</td>
+              <td>${escapeHtml(row.schneider_gap || "")}</td>
+              <td>${renderSourceIds(row.source_ids || [])}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSupplierSegmentTable(rows) {
+  if (!rows.length) return "";
+  return `
+    <div class="supplier-segment-table-wrap">
+      <div class="supplier-segment-title">
+        <strong>非竞品供应链分层</strong>
+        <span>排除施耐德主要竞品整机品牌后的其他供应商线索</span>
+      </div>
+      <table class="supplier-segment-table">
+        <thead>
+          <tr>
+            <th>供应商类别</th>
+            <th>公开证据</th>
+            <th>业务意义</th>
+            <th>施耐德经营提示</th>
+            <th>引用</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.segment || "")}</td>
+              <td>${escapeHtml(row.public_evidence || "")}</td>
+              <td>${escapeHtml(row.business_meaning || "")}</td>
+              <td>${escapeHtml(row.se_implication || "")}</td>
+              <td>${renderSourceIds(row.source_ids || [])}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSupplyEvidenceTable(rows, title, subtitle) {
+  if (!rows.length) return "";
+  return `
+    <div class="supplier-segment-table-wrap">
+      <div class="supplier-segment-title">
+        <strong>${escapeHtml(title || "供应链证据表")}</strong>
+        <span>${escapeHtml(subtitle || "公开证据、判断与施耐德经营提示")}</span>
+      </div>
+      <table class="supplier-segment-table">
+        <thead>
+          <tr>
+            <th>研究层级</th>
+            <th>公开证据</th>
+            <th>判断</th>
+            <th>施耐德经营提示</th>
+            <th>引用</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.segment || "")}</td>
+              <td>${escapeHtml(row.public_evidence || "")}</td>
+              <td>${escapeHtml(row.judgement || "")}</td>
+              <td>${escapeHtml(row.se_implication || "")}</td>
+              <td>${renderSourceIds(row.source_ids || [])}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
     </div>
   `;
 }

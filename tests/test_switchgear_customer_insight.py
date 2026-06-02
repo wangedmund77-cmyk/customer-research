@@ -62,20 +62,88 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertTrue(_is_chint_customer("CHINT Electrics"))
         self.assertFalse(_is_chint_customer("某某成套设备有限公司"))
 
-    def test_chint_pain_opportunities_include_competitor_playbook(self):
+    def test_chint_pain_opportunities_include_panel_ka_playbook(self):
         project = CustomerProject(id="demo", customer="浙江正泰电器股份有限公司", year=2026)
         dashboard = _build_insight_dashboard(project)
         pain_rows = {row["field"]: row for section in dashboard["pain_opportunities"] for row in section["rows"]}
+        summary = dashboard["competitor_summary"]
 
-        self.assertIn("强势本土竞品", pain_rows["市场竞争压力"]["pain"])
+        self.assertIn("盘厂KA", pain_rows["市场竞争压力"]["pain"])
         self.assertIn("BlokSeT", pain_rows["质量管控痛点"]["schneider_advantage"])
         self.assertIn("Power Commission", pain_rows["生产效率痛点"]["schneider_advantage"])
+        self.assertIn("Power Build", pain_rows["人才痛点"]["schneider_playbook"])
         self.assertIn("设计院/EPC", pain_rows["设计能力痛点"]["schneider_playbook"])
-        self.assertIn("低价可替代", pain_rows["市场竞争压力"]["schneider_playbook"])
+        self.assertIn("BOM冻结", pain_rows["供应链痛点"]["schneider_playbook"])
+        self.assertIn("FAT/SAT", pain_rows["生产效率痛点"]["schneider_playbook"])
         self.assertIn("TCO", pain_rows["技术成本痛点"]["schneider_playbook"])
+        self.assertEqual("施耐德盘厂KA经营链路", summary["chain_heading"])
+        self.assertIn("盘厂KA", summary["title"])
+        self.assertIn("项目入口", summary["substitution_chain"][1]["step"])
+        self.assertIn("FAT/SAT", summary["substitution_chain"][4]["insight"])
         self.assertIn("SE5", pain_rows["质量管控痛点"]["source_ids"])
         self.assertIn("SE7", pain_rows["市场竞争压力"]["source_ids"])
         self.assertIn("KB1", pain_rows["人才痛点"]["source_ids"])
+
+    def test_chint_supply_procurement_marks_competitor_purchase_boundary(self):
+        project = CustomerProject(id="demo", customer="浙江正泰电器股份有限公司", year=2026)
+        dashboard = _build_insight_dashboard(project)
+        supply_rows = {row["field"]: row for section in dashboard["supply_procurement"] for row in section["rows"]}
+
+        self.assertIn("未发现权威公开资料显示正泰电器本体批量采购", supply_rows["主要竞品品牌"]["value"])
+        self.assertIn("未披露施耐德、ABB、西门子等竞品品牌采购比例", supply_rows["竞品采购比例"]["value"])
+        self.assertIn("项目BOM口径测算", supply_rows["竞品采购比例"]["value"])
+        self.assertIn("排除施耐德、ABB、西门子、伊顿", supply_rows["其他器件供应商"]["value"])
+        self.assertIn("宏丰股份", supply_rows["其他器件供应商"]["value"])
+        self.assertIn("S62", supply_rows["其他器件供应商"]["source_ids"])
+        supplier_segments = supply_rows["其他器件供应商"]["supplier_segments"]
+        self.assertGreaterEqual(len(supplier_segments), 7)
+        supplier_segment_text = "\n".join(
+            f'{row["segment"]} {row["public_evidence"]} {row["business_meaning"]} {row["se_implication"]}'
+            for row in supplier_segments
+        )
+        self.assertIn("银点/电接触材料", supplier_segment_text)
+        self.assertIn("采购云", supplier_segment_text)
+        self.assertIn("柜体/钣金", supplier_segment_text)
+        self.assertIn("POWGRID-S", supply_rows["柜体供应商"]["value"])
+        self.assertIn("PZ30", supply_rows["柜体供应商"]["value"])
+        self.assertIn("S64", supply_rows["柜体供应商"]["source_ids"])
+        self.assertIn("S68", supply_rows["柜体供应商"]["source_ids"])
+        cabinet_evidence_rows = supply_rows["柜体供应商"]["evidence_rows"]
+        cabinet_evidence_text = "\n".join(
+            f'{row["segment"]} {row["public_evidence"]} {row["judgement"]} {row["se_implication"]}'
+            for row in cabinet_evidence_rows
+        )
+        self.assertIn("自有低压箱体/成套产品", cabinet_evidence_text)
+        self.assertIn("盘厂伙伴生态", cabinet_evidence_text)
+        self.assertIn("外协柜体/钣金/母排", cabinet_evidence_text)
+        self.assertIn("泰乐购", supply_rows["供应链稳定性"]["value"])
+        self.assertIn("区域销售总公司", supply_rows["供应链稳定性"]["value"])
+        self.assertIn("S67", supply_rows["供应链稳定性"]["source_ids"])
+        channel_evidence_rows = supply_rows["供应链稳定性"]["evidence_rows"]
+        channel_evidence_text = "\n".join(
+            f'{row["segment"]} {row["public_evidence"]} {row["judgement"]} {row["se_implication"]}'
+            for row in channel_evidence_rows
+        )
+        self.assertIn("智慧物流/前置仓", channel_evidence_text)
+        self.assertIn("采购云/供应商治理", channel_evidence_text)
+        self.assertIn("可持续供应链准入", channel_evidence_text)
+        self.assertIn("S55", supply_rows["主要竞品品牌"]["source_ids"])
+        self.assertIn("S56", supply_rows["竞品使用原因"]["source_ids"])
+        self.assertIn("S57", supply_rows["其他器件供应商"]["source_ids"])
+        self.assertIn("S58", supply_rows["竞品优势感知"]["source_ids"])
+        comparison_rows = supply_rows["竞品优势感知"]["comparison_rows"]
+        self.assertGreaterEqual(len(comparison_rows), 7)
+        comparison_text = "\n".join(
+            f'{row["business_need"]} {row["schneider_solution"]} {row["competitor_solution"]} {row["schneider_gap"]}'
+            for row in comparison_rows
+        )
+        self.assertIn("数据中心", comparison_text)
+        self.assertIn("MasterPacT", comparison_text)
+        self.assertIn("ABB", comparison_text)
+        self.assertIn("SIVACON", comparison_text)
+        self.assertIn("xEnergy", comparison_text)
+        self.assertIn("SE9", comparison_rows[1]["source_ids"])
+        self.assertIn("ABB1", comparison_rows[1]["source_ids"])
 
     def test_zhonghuan_customer_detection(self):
         self.assertTrue(_is_zhonghuan_customer("中环电气集团"))
@@ -202,7 +270,7 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
             ],
         )
         self.assertEqual(len(dashboard["supply_procurement"]), 3)
-        self.assertEqual(sum(len(section["rows"]) for section in dashboard["supply_procurement"]), 15)
+        self.assertEqual(sum(len(section["rows"]) for section in dashboard["supply_procurement"]), 14)
         self.assertEqual(
             [section["category"] for section in dashboard["supply_procurement"]],
             ["施耐德合作情况", "竞品采购情况", "其他供应商"],
@@ -222,7 +290,6 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
                 "竞品采购比例",
                 "竞品使用原因",
                 "竞品优势感知",
-                "竞品劣势感知",
                 "其他器件供应商",
                 "柜体供应商",
                 "供应链稳定性",
