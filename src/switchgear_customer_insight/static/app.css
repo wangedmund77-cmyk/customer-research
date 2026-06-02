@@ -1320,11 +1320,14 @@ button,
 .executive-hero-card h3 {
   margin-bottom: 9px;
   font-size: 24px;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
 }
 
 .executive-hero-card p,
 .executive-method-note p,
 .executive-judgement-card p,
+.key-analysis-card p,
 .substitution-step p,
 .module-takeaway-card p,
 .executive-action-row span,
@@ -1332,6 +1335,40 @@ button,
   color: #394650;
   font-size: 14px;
   line-height: 1.72;
+  overflow-wrap: anywhere;
+}
+
+.executive-hero-audience {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--faint);
+  padding-top: 13px;
+}
+
+.executive-hero-audience > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.executive-hero-audience > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.executive-hero-audience b {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  background: #e8f3ee;
+  color: var(--primary-dark);
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .executive-method-note {
@@ -1369,12 +1406,76 @@ button,
 }
 
 .executive-judgement-card,
+.key-analysis-card,
 .substitution-step,
 .module-takeaway-card,
 .executive-action-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
+}
+
+.key-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.key-analysis-card {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+}
+
+.key-analysis-card > div {
+  display: grid;
+  gap: 5px;
+}
+
+.key-analysis-card span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.key-analysis-card strong {
+  color: #20313b;
+  font-size: 15px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.key-analysis-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.key-analysis-card dl > div {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--faint);
+  padding-top: 8px;
+}
+
+.key-analysis-card dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.key-analysis-card dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
+.key-analysis-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .executive-judgement-card {
@@ -1435,13 +1536,38 @@ button,
   display: grid;
   align-content: start;
   gap: 8px;
-  min-height: 186px;
+  min-height: 238px;
   padding: 13px;
 }
 
 .module-takeaway-card > div {
   display: grid;
   gap: 4px;
+}
+
+.audience-takeaway-list {
+  display: grid;
+  gap: 7px;
+}
+
+.audience-takeaway-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--faint);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.audience-takeaway-row b {
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.audience-takeaway-row span {
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .executive-action-table {
@@ -3085,6 +3211,7 @@ button,
   .summary-insight-card,
   .executive-hero-card,
   .executive-judgement-grid,
+  .key-analysis-grid,
   .substitution-chain,
   .module-takeaway-grid {
     grid-template-columns: 1fr;
@@ -3169,6 +3296,20 @@ button,
   .account-brief,
   .section-row {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .executive-hero-card,
+  .executive-section {
+    padding: 14px;
+  }
+
+  .executive-hero-card h3 {
+    font-size: 20px;
+  }
+
+  .executive-hero-audience {
+    align-items: flex-start;
     flex-direction: column;
   }
 

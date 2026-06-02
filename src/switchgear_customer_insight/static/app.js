@@ -222,9 +222,10 @@ function renderSummaryPage(project) {
           <h3>${escapeHtml(summary.title || "企业摘要")}</h3>
           <p>${escapeHtml(summary.one_sentence || "")}</p>
         </div>
+        ${renderSummaryAudience(summary)}
       </article>
 
-      ${renderExecutiveJudgements(summary.judgements || [])}
+      ${renderKeyAnalysis(summary.key_analysis || [])}
       ${renderSubstitutionChain(summary.substitution_chain || [], summary)}
       ${renderModuleTakeaways(summary.module_takeaways || [])}
       ${renderExecutiveActions(summary.actions || [], summary)}
@@ -233,24 +234,50 @@ function renderSummaryPage(project) {
   `;
 }
 
-function renderExecutiveJudgements(items) {
+function renderSummaryAudience(summary = {}) {
+  const audiences = (summary.key_analysis || []).map((item) => item.audience).filter(Boolean);
+  if (!audiences.length) return "";
+  return `
+    <div class="executive-hero-audience" aria-label="摘要适用对象">
+      <span>适用对象</span>
+      <div>
+        ${audiences.map((audience) => `<b>${escapeHtml(audience)}</b>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderKeyAnalysis(items) {
   if (!items.length) return "";
   return `
     <section class="executive-section">
       <div class="section-row">
         <div>
-          <p class="eyebrow">Core Decisions</p>
-          <h3>核心经营判断</h3>
+          <p class="eyebrow">Key Analysis</p>
+          <h3>关键分析</h3>
         </div>
-        <span>${items.length} 条判断</span>
+        <span>盘厂客户经理 · 销售 · 战略部门</span>
       </div>
-      <div class="executive-judgement-grid">
+      <div class="key-analysis-grid">
         ${items
           .map(
             (item) => `
-              <article class="executive-judgement-card">
-                <strong>${escapeHtml(item.title)}</strong>
-                <p>${escapeHtml(item.text)}</p>
+              <article class="key-analysis-card">
+                <div>
+                  <span>${escapeHtml(item.audience || "")}</span>
+                  <strong>${escapeHtml(item.title || "")}</strong>
+                </div>
+                <p>${escapeHtml(item.analysis || "")}</p>
+                <dl>
+                  <div>
+                    <dt>重点动作</dt>
+                    <dd>${escapeHtml(item.what_to_do || "")}</dd>
+                  </div>
+                  <div>
+                    <dt>关注风险</dt>
+                    <dd>${escapeHtml(item.risk_or_watch || "")}</dd>
+                  </div>
+                </dl>
                 <small>${renderSourceIds(item.source_ids || [])}</small>
               </article>
             `,
@@ -296,10 +323,10 @@ function renderModuleTakeaways(items) {
     <section class="executive-section">
       <div class="section-row">
         <div>
-          <p class="eyebrow">9-Module Takeaways</p>
-          <h3>9大模块提炼结论</h3>
+          <p class="eyebrow">Enterprise Insight Modules</p>
+          <h3>企业洞察9大模块摘要</h3>
         </div>
-        <span>${items.length} 个模块</span>
+        <span>盘厂客户经理 · 销售 · 战略部门</span>
       </div>
       <div class="module-takeaway-grid">
         ${items
@@ -310,7 +337,7 @@ function renderModuleTakeaways(items) {
                   <span>${escapeHtml(item.module)}</span>
                   <strong>${escapeHtml(item.signal)}</strong>
                 </div>
-                <p>${escapeHtml(item.takeaway)}</p>
+                ${renderAudienceTakeaway(item)}
                 <small>${renderSourceIds(item.source_ids || [])}</small>
               </article>
             `,
@@ -318,6 +345,31 @@ function renderModuleTakeaways(items) {
           .join("")}
       </div>
     </section>
+  `;
+}
+
+function renderAudienceTakeaway(item) {
+  const rows = [
+    ["盘厂客户经理", item.manager_focus],
+    ["销售", item.sales_focus],
+    ["战略部门", item.strategy_focus],
+  ].filter(([, value]) => value);
+  if (!rows.length) {
+    return `<p>${escapeHtml(item.takeaway || "")}</p>`;
+  }
+  return `
+    <div class="audience-takeaway-list">
+      ${rows
+        .map(
+          ([label, value]) => `
+            <div class="audience-takeaway-row">
+              <b>${escapeHtml(label)}</b>
+              <span>${escapeHtml(value)}</span>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
   `;
 }
 
@@ -981,9 +1033,15 @@ function buildReferenceSourceCoverage(project) {
   };
 
   const summary = dashboard.competitor_summary || {};
-  (summary.judgements || []).forEach((item) => addUsage(item.source_ids, "摘要", item.title || "核心经营判断", shortSourceDetail(item.text || "")));
+  (summary.key_analysis || []).forEach((item) => {
+    const detail = [item.analysis, item.what_to_do, item.risk_or_watch].filter(Boolean).join(" ");
+    addUsage(item.source_ids, "摘要", `${item.audience || ""} / ${item.title || "关键分析"}`, shortSourceDetail(detail));
+  });
   (summary.substitution_chain || []).forEach((item) => addUsage(item.source_ids, "摘要", item.stage || "经营链路", shortSourceDetail(item.insight || "")));
-  (summary.module_takeaways || []).forEach((item) => addUsage(item.source_ids, item.module || "摘要", item.signal || "模块结论", shortSourceDetail(item.takeaway || "")));
+  (summary.module_takeaways || []).forEach((item) => {
+    const detail = [item.manager_focus, item.sales_focus, item.strategy_focus, item.takeaway].filter(Boolean).join(" ");
+    addUsage(item.source_ids, item.module || "摘要", item.signal || "模块结论", shortSourceDetail(detail));
+  });
   (summary.actions || []).forEach((item) => addUsage(item.source_ids, "摘要", item.action || "推进动作", shortSourceDetail(item.detail || "")));
 
   addSectionRows(dashboard.business_capability, "02 业务能力模块");
