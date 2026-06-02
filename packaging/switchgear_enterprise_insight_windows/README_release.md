@@ -14,6 +14,20 @@ No extra Python packages are required.
 2. Double-click `start_windows.bat`.
 3. Open `http://127.0.0.1:8790/` in your browser.
 
+## Start with PowerShell
+
+Open PowerShell in the unzipped folder and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_powershell.ps1
+```
+
+LAN mode:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_powershell_lan.ps1
+```
+
 ## Share on LAN
 
 1. Double-click `start_lan.bat`.

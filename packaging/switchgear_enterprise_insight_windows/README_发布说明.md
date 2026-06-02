@@ -18,6 +18,20 @@
 
 如果双击没有自动打开浏览器，可以手动复制上面的地址到浏览器。
 
+## PowerShell 启动方式
+
+如果希望用 PowerShell 启动，在解压后的目录空白处按住 `Shift` 并右键，选择“在终端中打开”，然后执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_powershell.ps1
+```
+
+局域网共享模式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_powershell_lan.ps1
+```
+
 ## 局域网共享
 
 如果希望同一局域网内其他电脑访问：
