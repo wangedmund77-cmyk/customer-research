@@ -350,9 +350,9 @@ function renderModuleTakeaways(items) {
 
 function renderAudienceTakeaway(item) {
   const rows = [
-    ["盘厂客户经理", item.manager_focus],
-    ["销售", item.sales_focus],
-    ["战略部门", item.strategy_focus],
+    ["盘厂客户经理看点", item.manager_focus],
+    ["销售看点", item.sales_focus],
+    ["战略部门看点", item.strategy_focus],
   ].filter(([, value]) => value);
   if (!rows.length) {
     return `<p>${escapeHtml(item.takeaway || "")}</p>`;
