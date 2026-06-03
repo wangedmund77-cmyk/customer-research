@@ -225,9 +225,9 @@ function renderSummaryPage(project) {
         ${renderSummaryAudience(summary)}
       </article>
 
+      ${renderModuleTakeaways(summary.module_takeaways || [])}
       ${renderKeyAnalysis(summary.key_analysis || [])}
       ${renderSubstitutionChain(summary.substitution_chain || [], summary)}
-      ${renderModuleTakeaways(summary.module_takeaways || [])}
       ${renderExecutiveActions(summary.actions || [], summary)}
       ${renderExecutiveWatchlist(summary.watchlist || [])}
     </section>
