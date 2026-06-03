@@ -324,7 +324,7 @@ function renderModuleTakeaways(items) {
       <div class="section-row">
         <div>
           <p class="eyebrow">Enterprise Insight Modules</p>
-          <h3>企业洞察9大模块摘要</h3>
+          <h3>企业洞察摘要</h3>
         </div>
         <span>盘厂客户经理 · 销售 · 战略部门</span>
       </div>
