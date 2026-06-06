@@ -21,14 +21,16 @@ from .report_writer import slugify_customer_name, write_customer_project
 
 
 ROOT_DIR = Path.cwd()
-STATIC_DIR = Path(__file__).with_name("static")
+PACKAGE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = PACKAGE_DIR / "static"
+SOURCE_REGISTRY_DATA_DIR = PACKAGE_DIR / "data" / "source_registry"
 WEB_OUTPUT_DIR = ROOT_DIR / "outputs" / "switchgear_customer_web"
 CHINT_REPORT_PATH = ROOT_DIR / "outputs" / "chint_electric_2026" / "浙江正泰电器股份有限公司_深度企业洞察报告.md"
-CHINT_SOURCE_PATH = ROOT_DIR / "outputs" / "chint_electric_2026" / "source_registry.md"
+CHINT_SOURCE_PATH = SOURCE_REGISTRY_DATA_DIR / "chint.md"
 ZHONGHUAN_REPORT_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "江苏中环电气集团有限公司_深度企业洞察报告.md"
-ZHONGHUAN_SOURCE_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "source_registry.md"
+ZHONGHUAN_SOURCE_PATH = SOURCE_REGISTRY_DATA_DIR / "zhonghuan.md"
 TIANYU_REPORT_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "福州天宇电气股份有限公司_深度企业洞察报告.md"
-TIANYU_SOURCE_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "source_registry.md"
+TIANYU_SOURCE_PATH = SOURCE_REGISTRY_DATA_DIR / "tianyu.md"
 LOCAL_SOURCE_ROOTS = (
     Path("/Users/edmund/Documents/施耐德电气项目工作模式"),
     Path("/Users/edmund/Downloads"),
@@ -293,6 +295,15 @@ def create_customer_project(customer: str, year: int, internal_notes: str = "") 
         shutil.copyfile(files[3], report_path)
         project.logs.append("已生成逐字段报告模板，等待补充公开研究或内部数据。")
 
+    if not project.source_registry_path:
+        matched_registry = _matched_source_registry(customer)
+        if matched_registry:
+            registry_source, label = matched_registry
+            source_registry_path = output_dir / "source_registry.md"
+            shutil.copyfile(registry_source, source_registry_path)
+            project.source_registry_path = str(source_registry_path)
+            project.logs.append(f"已载入{label}来源登记表。")
+
     project.report_path = str(report_path)
     project.word_report_path = str(report_path.with_suffix(".docx"))
     project.report_preview = report_path.read_text(encoding="utf-8")[:8000]
@@ -323,6 +334,16 @@ def _matched_completed_report(customer: str) -> tuple[Path, Path, str] | None:
         return ZHONGHUAN_REPORT_PATH, ZHONGHUAN_SOURCE_PATH, "中环电气集团"
     if _is_tianyu_customer(customer) and TIANYU_REPORT_PATH.exists():
         return TIANYU_REPORT_PATH, TIANYU_SOURCE_PATH, "天宇电气"
+    return None
+
+
+def _matched_source_registry(customer: str) -> tuple[Path, str] | None:
+    if _is_chint_customer(customer) and CHINT_SOURCE_PATH.exists():
+        return CHINT_SOURCE_PATH, "正泰电器"
+    if _is_zhonghuan_customer(customer) and ZHONGHUAN_SOURCE_PATH.exists():
+        return ZHONGHUAN_SOURCE_PATH, "中环电气集团"
+    if _is_tianyu_customer(customer) and TIANYU_SOURCE_PATH.exists():
+        return TIANYU_SOURCE_PATH, "天宇电气"
     return None
 
 

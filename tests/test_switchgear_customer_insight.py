@@ -4,6 +4,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from switchgear_customer_insight.citations import link_markdown_citations, load_source_references, parse_source_registry
+from switchgear_customer_insight import webapp as webapp_module
 from switchgear_customer_insight.docx_writer import write_docx_from_markdown
 from switchgear_customer_insight.framework import FRAMEWORK, module_names
 from switchgear_customer_insight.petrochem_ka_data import PETROCHEM_KA_DATA
@@ -15,6 +16,7 @@ from switchgear_customer_insight.webapp import (
     _attachment_header,
     _build_insight_dashboard,
     _framework_catalog,
+    _matched_source_registry,
     _petrochem_source_registry_markdown,
     _is_chint_customer,
     _is_tianyu_customer,
@@ -253,18 +255,17 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertIn("【ZH9】", linked)
 
     def test_all_dashboard_sources_are_registered_and_clickable(self):
-        cases = []
-        for customer_name, source_path in [
+        cases = [
             ("浙江正泰电器股份有限公司", CHINT_SOURCE_PATH),
             ("江苏中环电气集团有限公司", ZHONGHUAN_SOURCE_PATH),
             ("福州天宇电气股份有限公司", TIANYU_SOURCE_PATH),
-        ]:
-            if source_path.exists():
-                cases.append((customer_name, load_source_references(source_path)))
+        ]
+        self.assertTrue(all(source_path.exists() for _, source_path in cases))
+        source_cases = [(customer_name, load_source_references(source_path)) for customer_name, source_path in cases]
         for customer_name, data in PETROCHEM_KA_DATA.items():
-            cases.append((customer_name, parse_source_registry(_petrochem_source_registry_markdown({"name": customer_name, **data}))))
+            source_cases.append((customer_name, parse_source_registry(_petrochem_source_registry_markdown({"name": customer_name, **data}))))
 
-        for customer, references in cases:
+        for customer, references in source_cases:
             with self.subTest(customer=customer):
                 project = CustomerProject(id="demo", customer=customer, year=2026)
                 used_source_ids = _collect_source_ids(_build_insight_dashboard(project))
@@ -276,6 +277,28 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
                 )
                 self.assertEqual([], missing)
                 self.assertEqual([], unlinked)
+
+    def test_packaged_source_registry_is_used_without_outputs_report(self):
+        registry_path, label = _matched_source_registry("浙江正泰电器股份有限公司")
+        self.assertEqual("正泰电器", label)
+        references = load_source_references(registry_path)
+        self.assertEqual("https://new.abb.com/low-voltage/products/circuit-breakers/emax2", references["ABB1"].url)
+
+        old_report_path = webapp_module.CHINT_REPORT_PATH
+        old_output_dir = webapp_module.WEB_OUTPUT_DIR
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                tmp_path = Path(tmp)
+                webapp_module.CHINT_REPORT_PATH = tmp_path / "missing_chint_report.md"
+                webapp_module.WEB_OUTPUT_DIR = tmp_path / "web"
+                project = webapp_module.create_customer_project("浙江正泰电器股份有限公司", 2026)
+            finally:
+                webapp_module.CHINT_REPORT_PATH = old_report_path
+                webapp_module.WEB_OUTPUT_DIR = old_output_dir
+
+            fallback_references = load_source_references(project.source_registry_path)
+            self.assertIn("ABB1", fallback_references)
+            self.assertEqual("https://new.abb.com/low-voltage/products/circuit-breakers/emax2", fallback_references["ABB1"].url)
 
     def test_chinese_attachment_header_has_ascii_fallback(self):
         header = _attachment_header("福州天宇电气股份有限公司_深度企业洞察报告.docx")
