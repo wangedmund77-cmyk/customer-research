@@ -3,14 +3,19 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from switchgear_customer_insight.citations import link_markdown_citations, parse_source_registry
+from switchgear_customer_insight.citations import link_markdown_citations, load_source_references, parse_source_registry
 from switchgear_customer_insight.docx_writer import write_docx_from_markdown
 from switchgear_customer_insight.framework import FRAMEWORK, module_names
+from switchgear_customer_insight.petrochem_ka_data import PETROCHEM_KA_DATA
 from switchgear_customer_insight.report_writer import render_research_prompt, write_customer_project
 from switchgear_customer_insight.webapp import (
+    CHINT_SOURCE_PATH,
+    TIANYU_SOURCE_PATH,
+    ZHONGHUAN_SOURCE_PATH,
     _attachment_header,
     _build_insight_dashboard,
     _framework_catalog,
+    _petrochem_source_registry_markdown,
     _is_chint_customer,
     _is_tianyu_customer,
     _is_zhonghuan_customer,
@@ -246,6 +251,31 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         linked = link_markdown_citations("依据【ZH1】和【ZH9】。", references)
         self.assertIn("[【ZH1】](https://example.com/source)", linked)
         self.assertIn("【ZH9】", linked)
+
+    def test_all_dashboard_sources_are_registered_and_clickable(self):
+        cases = []
+        for customer_name, source_path in [
+            ("浙江正泰电器股份有限公司", CHINT_SOURCE_PATH),
+            ("江苏中环电气集团有限公司", ZHONGHUAN_SOURCE_PATH),
+            ("福州天宇电气股份有限公司", TIANYU_SOURCE_PATH),
+        ]:
+            if source_path.exists():
+                cases.append((customer_name, load_source_references(source_path)))
+        for customer_name, data in PETROCHEM_KA_DATA.items():
+            cases.append((customer_name, parse_source_registry(_petrochem_source_registry_markdown({"name": customer_name, **data}))))
+
+        for customer, references in cases:
+            with self.subTest(customer=customer):
+                project = CustomerProject(id="demo", customer=customer, year=2026)
+                used_source_ids = _collect_source_ids(_build_insight_dashboard(project))
+                missing = sorted(source_id for source_id in used_source_ids if source_id not in references)
+                unlinked = sorted(
+                    source_id
+                    for source_id in used_source_ids
+                    if source_id in references and not _is_clickable_source_url(references[source_id].url)
+                )
+                self.assertEqual([], missing)
+                self.assertEqual([], unlinked)
 
     def test_chinese_attachment_header_has_ascii_fallback(self):
         header = _attachment_header("福州天宇电气股份有限公司_深度企业洞察报告.docx")
@@ -531,6 +561,24 @@ class SwitchgearCustomerInsightTests(unittest.TestCase):
         self.assertIn("SE5", pain_rows["质量管控痛点"]["source_ids"])
         self.assertIn("SE7", pain_rows["人才痛点"]["source_ids"])
         self.assertEqual(len(dashboard["framework_matrix"]), len(FRAMEWORK))
+
+
+def _collect_source_ids(value):
+    source_ids = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "source_ids" and isinstance(child, list):
+                source_ids.update(str(source_id) for source_id in child if source_id)
+            else:
+                source_ids.update(_collect_source_ids(child))
+    elif isinstance(value, list):
+        for item in value:
+            source_ids.update(_collect_source_ids(item))
+    return source_ids
+
+
+def _is_clickable_source_url(value: str) -> bool:
+    return value.startswith(("http://", "https://", "/Users/"))
 
 
 if __name__ == "__main__":

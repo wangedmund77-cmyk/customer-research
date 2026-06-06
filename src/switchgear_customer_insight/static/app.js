@@ -899,8 +899,9 @@ function renderSourceTypeCard(type, items) {
           .slice(0, 3)
           .map((item) => {
             const label = `${item.id} · ${item.title}`;
-            const content = isExternalUrl(item.url)
-              ? `<a href="${escapeAttr(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`
+            const href = sourceHref(item);
+            const content = href
+              ? `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`
               : `<span>${escapeHtml(label)}</span>`;
             return `<li>${content}</li>`;
           })
@@ -913,7 +914,7 @@ function renderSourceTypeCard(type, items) {
 function renderReferenceSources(project) {
   if (!sourceBoard) return;
   const coverage = buildReferenceSourceCoverage(project);
-  const clickableCount = coverage.sources.filter((item) => isExternalUrl(item.source?.url || "")).length;
+  const clickableCount = coverage.sources.filter((item) => sourceHref(item.source)).length;
   if (sourceCount) {
     sourceCount.textContent = `${coverage.sources.length} 来源 · ${clickableCount} 可点击`;
   }
@@ -930,7 +931,7 @@ function renderReferenceSources(project) {
           <p class="eyebrow">Source Register</p>
           <h3>数据来源目录</h3>
         </div>
-        <span>${coverage.sources.length} 个来源 · ${clickableCount} 个外部链接</span>
+        <span>${coverage.sources.length} 个来源 · ${clickableCount} 个可点击链接</span>
       </div>
       <div class="reference-source-table">
         <div class="reference-source-row is-head">
@@ -992,15 +993,18 @@ function renderReferenceSourceRow(item) {
 }
 
 function sourceLink(source, label) {
-  if (source && isExternalUrl(source.url || "")) {
-    return `<a href="${escapeAttr(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+  const href = sourceHref(source);
+  if (href) {
+    return `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
   }
   return escapeHtml(label);
 }
 
 function sourceOpenLink(source) {
-  if (source && isExternalUrl(source.url || "")) {
-    return `<a class="reference-link-button" href="${escapeAttr(source.url)}" target="_blank" rel="noreferrer">打开来源</a>`;
+  const href = sourceHref(source);
+  if (href) {
+    const label = isExternalUrl(source?.url || "") ? "打开来源" : "打开本地资料";
+    return `<a class="reference-link-button" href="${escapeAttr(href)}" target="_blank" rel="noreferrer">${label}</a>`;
   }
   const url = String(source?.url || "");
   if (url) {
@@ -2140,13 +2144,25 @@ function statusTag(label, value, tone) {
 
 function citationLink(label, sourceId) {
   const source = state.project?.source_references?.[sourceId];
-  if (!source || !isExternalUrl(source.url)) return label;
+  const href = sourceHref(source);
+  if (!href) return label;
   const title = [source.title, source.publisher, source.date].filter(Boolean).join(" · ");
-  return `<a class="citation-link" href="${escapeAttr(source.url)}" target="_blank" rel="noreferrer" title="${escapeAttr(title)}">${label}</a>`;
+  return `<a class="citation-link" href="${escapeAttr(href)}" target="_blank" rel="noreferrer" title="${escapeAttr(title)}">${label}</a>`;
+}
+
+function sourceHref(source) {
+  const url = String(source?.url || "");
+  if (isExternalUrl(url)) return url;
+  if (isLocalSourcePath(url)) return `/api/source-file?path=${encodeURIComponent(url)}`;
+  return "";
 }
 
 function isExternalUrl(value) {
   return /^https?:\/\//.test(String(value || ""));
+}
+
+function isLocalSourcePath(value) {
+  return /^\/Users\//.test(String(value || ""));
 }
 
 function escapeHtml(text) {

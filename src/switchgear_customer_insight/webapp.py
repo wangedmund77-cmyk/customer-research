@@ -29,6 +29,10 @@ ZHONGHUAN_REPORT_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "江�
 ZHONGHUAN_SOURCE_PATH = ROOT_DIR / "outputs" / "zhonghuan_electric_2026" / "source_registry.md"
 TIANYU_REPORT_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "福州天宇电气股份有限公司_深度企业洞察报告.md"
 TIANYU_SOURCE_PATH = ROOT_DIR / "outputs" / "tianyu_electric_2026" / "source_registry.md"
+LOCAL_SOURCE_ROOTS = (
+    Path("/Users/edmund/Documents/施耐德电气项目工作模式"),
+    Path("/Users/edmund/Downloads"),
+)
 
 
 @dataclass
@@ -107,6 +111,9 @@ class CustomerInsightRequestHandler(SimpleHTTPRequestHandler):
                     "has_tianyu_report": TIANYU_REPORT_PATH.exists(),
                 }
             )
+            return
+        if path == "/api/source-file":
+            self._handle_source_file(parsed.query)
             return
         if path.startswith("/api/projects/"):
             parts = path.strip("/").split("/")
@@ -225,6 +232,23 @@ class CustomerInsightRequestHandler(SimpleHTTPRequestHandler):
             self._text(text, filename=path.name)
             return
         self._text(path.read_text(encoding="utf-8"))
+
+    def _handle_source_file(self, query: str) -> None:
+        raw_path = parse_qs(query).get("path", [""])[0]
+        if not raw_path:
+            self._json({"error": "missing_path"}, status=400)
+            return
+        path = Path(raw_path).expanduser().resolve()
+        if not _is_allowed_local_source(path):
+            self._json({"error": "source_path_not_allowed"}, status=403)
+            return
+        if not path.exists() or not path.is_file():
+            self._json({"error": "source_file_not_found"}, status=404)
+            return
+        if path.suffix.lower() in {".md", ".txt"}:
+            self._text(path.read_text(encoding="utf-8", errors="replace"))
+            return
+        self._binary(path.read_bytes(), _content_type(path.name), filename=path.name)
 
 
 def create_customer_project(customer: str, year: int, internal_notes: str = "") -> CustomerProject:
@@ -4188,13 +4212,28 @@ def _attachment_header(filename: str) -> str:
     return f"attachment; filename={ascii_name}; filename*=UTF-8''{quote(filename)}"
 
 
+def _is_allowed_local_source(path: Path) -> bool:
+    for root in LOCAL_SOURCE_ROOTS:
+        root_resolved = root.resolve()
+        if path == root_resolved or root_resolved in path.parents:
+            return True
+    return False
+
+
 def _content_type(filename: str) -> str:
-    if filename.endswith(".html"):
+    suffix_name = filename.lower()
+    if suffix_name.endswith(".html"):
         return "text/html; charset=utf-8"
-    if filename.endswith(".css"):
+    if suffix_name.endswith(".md"):
+        return "text/markdown; charset=utf-8"
+    if suffix_name.endswith(".css"):
         return "text/css; charset=utf-8"
-    if filename.endswith(".js"):
+    if suffix_name.endswith(".js"):
         return "text/javascript; charset=utf-8"
-    if filename.endswith(".svg"):
+    if suffix_name.endswith(".svg"):
         return "image/svg+xml"
+    if suffix_name.endswith(".pdf"):
+        return "application/pdf"
+    if suffix_name.endswith(".xlsx"):
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return "application/octet-stream"

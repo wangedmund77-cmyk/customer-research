@@ -348,7 +348,7 @@ PETROCHEM_KA_DATA: dict[str, dict[str, Any]] = {
             "risk": "炼化周期、海外制裁/合规不确定性、油价波动、资产负债和装置安全风险",
         },
         "sources": [
-            {"id": "HL1", "title": "恒力石化2025年度报告摘要", "publisher": "同花顺公告镜像", "date": "2026-04", "url": "https://notice.10jqka.com.cn/api/pdf/327ad30330785ea5_1776158340/%E6%81%92%E5%8A%9B%E7%9F%B3%E5%8C%96%EF%BC%9A%E6%81%92%E5%8A%9B%E7%9F%B3%E5%8C%962025%E5%B9%B4%E5%B9%B4%E5%BA%A6%E6%8A%A5%E5%91%8A%E6%91%98%E8%A6%81.pdf", "purpose": "年度报告摘要和财务"},
+            {"id": "HL1", "title": "恒力石化2025年度报告摘要", "publisher": "上海证券报", "date": "2026-04-15", "url": "https://paper.cnstock.com/html/2026-04/15/content_2199760.htm", "purpose": "年度报告摘要、营收利润、资产负债和担保风险"},
             {"id": "HL2", "title": "恒力石化2025年年报点评", "publisher": "新浪财经/券商研报", "date": "2026-04", "url": "https://stock.finance.sina.com.cn/stock/go.php/vReport_Show/kind/search/rptid/829735155878/index.phtml", "purpose": "业务趋势和财务解读"},
             {"id": "HL3", "title": "恒力石化2025年度可持续发展报告信息", "publisher": "中财网", "date": "2026-05", "url": "https://www.cfi.net.cn/p20260511000888.html", "purpose": "ESG与可持续发展线索"},
         ],
@@ -379,7 +379,7 @@ PETROCHEM_KA_DATA: dict[str, dict[str, Any]] = {
             "risk": "盈利从2025年低位到2026年一季度修复，但资产负债率仍高，原油/甲醇/丙烷价格和产品价差波动、安全环保监管、连续生产停机、项目付款信用和新材料装置爬坡仍是经营风险",
         },
         "sources": [
-            {"id": "SH1", "title": "东方盛虹2025年年度报告", "publisher": "巨潮资讯/上市公司公告", "date": "2026-04-29", "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225243361.PDF", "purpose": "年度报告、公司信息、股权、财务、产能、员工、智能工厂、风险和战略"},
+            {"id": "SH1", "title": "东方盛虹2025年年度报告", "publisher": "巨潮资讯/上市公司公告", "date": "2026-04-29", "url": "https://static.cninfo.com.cn/finalpage/2026-04-29/1225243361.pdf", "purpose": "年度报告、公司信息、股权、财务、产能、员工、智能工厂、风险和战略"},
             {"id": "SH2", "title": "关于我们-东方盛虹", "publisher": "东方盛虹官网", "date": "访问日期：2026-06-02", "url": "https://www.jsessh.com/zh/about/", "purpose": "官网公司简介、产业基地、绿色产业链、荣誉资质和业务定位"},
             {"id": "SH3", "title": "关于盛虹炼化（连云港）有限公司炼化一体化项目环境影响报告书的批复", "publisher": "生态环境部", "date": "2018-12-13", "url": "https://www.mee.gov.cn/xxgk2018/xxgk/xxgk11/201812/t20181213_684732.html", "purpose": "盛虹炼化1600万吨炼油、280万吨芳烃、110万吨乙烯、码头储运、公辅环保工程"},
             {"id": "SH4", "title": "横河电机为盛虹1600万吨/年炼化一体化项目提供解决方案", "publisher": "Yokogawa China", "date": "2022-05-23", "url": "https://www.yokogawa.com/cn/news/press-releases/2022/2022-05-23/", "purpose": "盛虹炼化自动化/控制系统供应商线索、项目投产和数字化运维场景"},
